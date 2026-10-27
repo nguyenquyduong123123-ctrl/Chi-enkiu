@@ -4,7 +4,7 @@ ma_hoa_don varchar(50) not null primary key,
 ma_nhan_vien varchar(50) not null,
 ma_ghi_danh varchar(50) not null,
 khoan_thu int not null,
-//aksdjasdasd
+
 ngay_lap timestamp not null,
 hinh_thuc varchar(20) not null,
 foreign key(ma_nhan_vien) references Nhan_vien(ma_nhan_vien),
@@ -24,7 +24,6 @@ ngay_dang_ki timestamp not null,
 trang_thai_hoc varchar(50) check( trang_thai_hoc in ('danghoc', 'nghihoc') ),
 foreign key (ma_sinh_vien) references Hoc_sinh(ma_sinh_vien)
 );
-
 
 create table Khoa_hoc(
 ma_khoa_hoc varchar(50) not null primary key,
@@ -83,7 +82,8 @@ ngay_day timestamp not null,
 ca_hoc varchar(50) not null,
 phong_hoc varchar(50) not null,
 noi_dung varchar(50) not null,
-trang_thai_buoi varchar(50) check(trang_thai_buoi in ('nghi', 'day')) not null,
+trang_thai_buoi varchar(50) 
+check(trang_thai_buoi in ('nghi', 'day')) not null,
 foreign key (id_giao_vien) references Giao_vien(id_giao_vien),
 foreign key(id_lop) references Lop(id_lop)
 );
