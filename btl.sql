@@ -133,4 +133,4 @@ create table De_thi(
 ma_de_thi varchar(50) not null primary key,
 cap_do varchar(50) not null,
 thoi_gian int not null
-)
+);
