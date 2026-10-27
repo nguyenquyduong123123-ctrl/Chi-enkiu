@@ -4,7 +4,7 @@ ma_hoa_don varchar(50) not null primary key,
 ma_nhan_vien varchar(50) not null,
 ma_ghi_danh varchar(50) not null,
 khoan_thu int not null,
-//aksdjasdasd
+
 ngay_lap timestamp not null,
 hinh_thuc varchar(20) not null,
 foreign key(ma_nhan_vien) references Nhan_vien(ma_nhan_vien),
