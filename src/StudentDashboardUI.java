@@ -10,7 +10,6 @@ import java.awt.geom.Path2D;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,8 +48,6 @@ public class StudentDashboardUI extends JFrame {
 
     public StudentDashboardUI(String maSinhVien) {
         this.maSinhVien = maSinhVien;
-
-        // Tải thuần dữ liệu từ MySQL (Không gán dữ liệu giả)
         loadStudentProfileFromDB();
 
         setTitle("CỔNG THÔNG TIN SINH VIÊN S-LINK - " + this.tenSinhVien.toUpperCase());
@@ -85,6 +82,7 @@ public class StudentDashboardUI extends JFrame {
         }
 
         try {
+            // Khớp với bảng Hoc_sinh và Giao_vien mới
             String sql = "SELECT hs.ho_ten, hs.ngay_sinh, hs.trinh_do, hs.so_dien_thoai, hs.id_giao_vien, gv.ho_ten AS ten_gv " +
                          "FROM Hoc_sinh hs " +
                          "LEFT JOIN Giao_vien gv ON hs.id_giao_vien = gv.id_giao_vien " +
@@ -401,16 +399,18 @@ public class StudentDashboardUI extends JFrame {
         Connection conn = DBConnection.getConnection();
         if (conn != null) {
             try {
-                String sqlDiem = "SELECT tong_diem, tinh_trang FROM Ket_qua_thi WHERE ma_sinh_vien = ? ORDER BY ma_bai_lam DESC LIMIT 1";
+                // Khớp bảng Ket_qua_thi mới
+                String sqlDiem = "SELECT tong_diem FROM Ket_qua_thi WHERE ma_sinh_vien = ? ORDER BY ma_bai_lam DESC LIMIT 1";
                 PreparedStatement pstDiem = conn.prepareStatement(sqlDiem);
                 pstDiem.setString(1, maSinhVien);
                 ResultSet rsDiem = pstDiem.executeQuery();
                 if (rsDiem.next()) {
                     tongDiemThi = rsDiem.getInt("tong_diem");
-                    tinhTrangThi = rsDiem.getString("tinh_trang").toUpperCase();
+                    tinhTrangThi = (tongDiemThi >= 80) ? "ĐẠT" : "CHƯA ĐẠT";
                 }
                 rsDiem.close(); pstDiem.close();
 
+                // Khớp bảng hoa_don mới
                 String sqlHP = "SELECT SUM(khoan_thu) AS tong FROM hoa_don WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%')";
                 PreparedStatement pstHP = conn.prepareStatement(sqlHP);
                 pstHP.setString(1, maSinhVien);
@@ -437,12 +437,13 @@ public class StudentDashboardUI extends JFrame {
         centerGrid.setOpaque(false);
 
         RoundedPanel cardSchedule = createCard("Lịch học tiếp theo (Lich_hoc)");
-        String[] cols = {"Ngày dạy", "Ca học", "Phòng", "Nội dung"};
+        String[] cols = {"Ngày dạy", "Ca học", "Phòng", "Nội dung", "Trạng thái"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
 
         Connection connLich = DBConnection.getConnection();
         if (connLich != null) {
             try {
+                // Khớp bảng Lich_hoc mới kết nối qua id_giao_vien
                 String sqlLich = "SELECT lh.* FROM Lich_hoc lh " +
                                  "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien " +
                                  "WHERE hs.ma_sinh_vien = ? LIMIT 5";
@@ -454,7 +455,8 @@ public class StudentDashboardUI extends JFrame {
                         rsLich.getString("ngay_day"),
                         rsLich.getString("ca_hoc"),
                         rsLich.getString("phong_hoc"),
-                        rsLich.getString("noi_dung")
+                        rsLich.getString("noi_dung"),
+                        rsLich.getString("trang_thai_buoi")
                     });
                 }
                 rsLich.close(); pstLich.close(); connLich.close();
@@ -546,6 +548,7 @@ public class StudentDashboardUI extends JFrame {
         if (conn == null) return;
 
         try {
+            // Khớp bảng Khoa_hoc mới
             String sql = "SELECT * FROM Khoa_hoc " +
                          "WHERE ma_khoa_hoc NOT IN (" +
                          "   SELECT ma_ghi_danh FROM hoa_don " +
@@ -579,6 +582,7 @@ public class StudentDashboardUI extends JFrame {
         if (conn == null) return false;
         try {
             String maHoaDon = "HD_" + (System.currentTimeMillis() / 1000);
+            // Khớp bảng hoa_don mới
             String sql = "INSERT INTO hoa_don (ma_hoa_don, ma_nhan_vien, ma_ghi_danh, khoan_thu, ngay_lap, hinh_thuc) " +
                          "VALUES (?, 'NV01', ?, ?, NOW(), 'Chuyển khoản')";
             PreparedStatement pstmt = conn.prepareStatement(sql);
@@ -604,12 +608,13 @@ public class StudentDashboardUI extends JFrame {
         title.setForeground(COLOR_TEXT_MAIN);
 
         RoundedPanel card = createCard("Chi tiết các buổi học");
-        String[] cols = {"Mã Lịch Học", "Ngày Dạy", "Ca Học", "Phòng Học", "Nội Dung", "Trạng Thái Buổi"};
+        String[] cols = {"Mã Lịch", "Mã Lớp", "Ngày Dạy", "Ca Học", "Phòng", "Nội Dung", "Trạng Thái"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
 
         Connection conn = DBConnection.getConnection();
         if (conn != null) {
             try {
+                // Khớp bảng Lich_hoc mới
                 String sql = "SELECT lh.* FROM Lich_hoc lh " +
                              "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien " +
                              "WHERE hs.ma_sinh_vien = ?";
@@ -618,9 +623,10 @@ public class StudentDashboardUI extends JFrame {
                 ResultSet rs = pstmt.executeQuery();
                 while (rs.next()) {
                     model.addRow(new Object[]{
-                        rs.getString("ma_lich_hoc"), rs.getString("ngay_day"),
-                        rs.getString("ca_hoc"), rs.getString("phong_hoc"),
-                        rs.getString("noi_dung"), rs.getString("trang_thai_buoi")
+                        rs.getString("ma_lich_hoc"), rs.getString("id_lop"), 
+                        rs.getString("ngay_day"), rs.getString("ca_hoc"), 
+                        rs.getString("phong_hoc"), rs.getString("noi_dung"), 
+                        rs.getString("trang_thai_buoi")
                     });
                 }
                 rs.close(); pstmt.close(); conn.close();
@@ -645,12 +651,13 @@ public class StudentDashboardUI extends JFrame {
         title.setForeground(COLOR_TEXT_MAIN);
 
         RoundedPanel card = createCard("Bảng điểm kiểm tra trình độ");
-        String[] cols = {"Mã Bài Làm", "Trình Độ", "Mã Đề Thi", "Đọc Hiểu", "Từ Vựng", "Nghe", "Tổng Điểm", "Tình Trạng"};
+        String[] cols = {"Mã Bài Làm", "Trình Độ", "Mã Đề Thi", "Đọc Hiểu", "Từ Vựng", "Nghe", "Tổng Điểm"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
 
         Connection conn = DBConnection.getConnection();
         if (conn != null) {
             try {
+                // Khớp bảng Ket_qua_thi mới
                 String sql = "SELECT * FROM Ket_qua_thi WHERE ma_sinh_vien = ?";
                 PreparedStatement pstmt = conn.prepareStatement(sql);
                 pstmt.setString(1, maSinhVien);
@@ -660,7 +667,7 @@ public class StudentDashboardUI extends JFrame {
                         rs.getString("ma_bai_lam"), rs.getString("trinh_do"),
                         rs.getString("ma_de_thi"), rs.getInt("diem_doc_hieu"),
                         rs.getInt("diem_tu_vung"), rs.getInt("diem_nghe"),
-                        rs.getInt("tong_diem"), rs.getString("tinh_trang")
+                        rs.getInt("tong_diem")
                     });
                 }
                 rs.close(); pstmt.close(); conn.close();
@@ -685,12 +692,13 @@ public class StudentDashboardUI extends JFrame {
         title.setForeground(COLOR_TEXT_MAIN);
 
         RoundedPanel card = createCard("Các hóa đơn đã được lập");
-        String[] cols = {"Mã Hóa Đơn", "Mã Ghi Danh / Khóa", "Khoản Thu (VNĐ)", "Ngày Lập", "Hình Thức", "Trạng Thái"};
+        String[] cols = {"Mã Hóa Đơn", "Mã Ghi Danh / Khóa", "Khoản Thu (VNĐ)", "Ngày Lập", "Hình Thức"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
 
         Connection conn = DBConnection.getConnection();
         if (conn != null) {
             try {
+                // Khớp bảng hoa_don mới
                 String sql = "SELECT * FROM hoa_don WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%')";
                 PreparedStatement pstmt = conn.prepareStatement(sql);
                 pstmt.setString(1, maSinhVien);
@@ -702,7 +710,7 @@ public class StudentDashboardUI extends JFrame {
                     model.addRow(new Object[]{
                         rs.getString("ma_hoa_don"), rs.getString("ma_ghi_danh"),
                         thuFmt, rs.getString("ngay_lap"),
-                        rs.getString("hinh_thuc"), "Đã thanh toán"
+                        rs.getString("hinh_thuc")
                     });
                 }
                 rs.close(); pstmt.close(); conn.close();
