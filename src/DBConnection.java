@@ -1,39 +1,24 @@
+
+
 import java.sql.Connection;
-
 import java.sql.DriverManager;
-
-
+import java.sql.SQLException;
 
 public class DBConnection {
-
-    // Đã trỏ chính xác về database BTL
-
-    private static final String URL = "jdbc:mysql://localhost:3306/BTL?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
-
+    private static final String URL = "jdbc:mysql://localhost:3306/BTL?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC";
     private static final String USER = "root";
-
-    private static final String PASSWORD = ""; // Nhập mật khẩu MySQL của bạn nếu có
-
-
+    private static final String PASSWORD = "root"; // Thay đổi mật khẩu root MySQL của bạn tại đây
 
     public static Connection getConnection() {
-
         Connection conn = null;
-
         try {
-
             Class.forName("com.mysql.cj.jdbc.Driver");
-
             conn = DriverManager.getConnection(URL, USER, PASSWORD);
-
-        } catch (Exception e) {
-
-            System.err.println("Lỗi kết nối CSDL BTL: " + e.getMessage());
-
+        } catch (ClassNotFoundException e) {
+            System.err.println("Chưa thêm thư viện JDBC Driver vào Project!");
+        } catch (SQLException e) {
+            System.err.println("Lỗi kết nối MySQL: " + e.getMessage());
         }
-
         return conn;
-
     }
-
 }

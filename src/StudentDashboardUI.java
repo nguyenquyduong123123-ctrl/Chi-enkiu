@@ -6,43 +6,54 @@ import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * GIAO DIỆN DÀNH RIÊNG CHO SINH VIÊN / HỌC VIÊN (StudentDashboardUI.java)
- */
 public class StudentDashboardUI extends JFrame {
 
-    // ===== Thông tin sinh viên đăng nhập =====
-    private static final String STUDENT_NAME = "Đào Thanh Dũng";
-    private static final String STUDENT_ID = "HV2026-0882";
-    private static final String STUDENT_CLASS = "Tiếng Nhật N4 - K24";
+    private final String maSinhVien;
+    private String tenSinhVien = "";
+    private String ngaySinh = "";
+    private String trinhDo = "";
+    private String soDienThoai = "";
+    private String idGiaoVien = "";
+    private String tenGiaoVien = "";
 
-    // ===== Bảng màu Giao diện (Tone Xanh Dương Nhạt) =====
-    private static final Color COLOR_PRIMARY = new Color(59, 130, 246);      // Xanh dương chủ đạo
-    private static final Color COLOR_LIGHT_BLUE = new Color(224, 242, 254);   // Nền xanh nhạt
+    private static final Color COLOR_PRIMARY = new Color(37, 99, 235);
+    private static final Color COLOR_PRIMARY_HOVER = new Color(29, 78, 216);
+    private static final Color COLOR_LIGHT_BLUE = new Color(224, 242, 254);
     private static final Color COLOR_BG = new Color(248, 250, 252);
     private static final Color COLOR_CARD = Color.WHITE;
-    private static final Color COLOR_BORDER = new Color(226, 232, 240);
-    private static final Color COLOR_TEXT_MAIN = new Color(30, 41, 59);
-    private static final Color COLOR_TEXT_MUTED = new Color(100, 116, 139);
-    private static final Color COLOR_NAV_ICON = new Color(100, 116, 139);
+    private static final Color COLOR_BORDER = new Color(203, 213, 225);
+    private static final Color COLOR_TEXT_MAIN = new Color(15, 23, 42);
+    private static final Color COLOR_TEXT_MUTED = new Color(71, 85, 105);
+    private static final Color COLOR_NAV_ICON = new Color(71, 85, 105);
     private static final Color COLOR_HOVER = new Color(241, 245, 249);
     private static final Color COLOR_ACTIVE_BG = new Color(238, 242, 255);
     private static final Color COLOR_SELECT = new Color(224, 242, 254);
+    private static final Color COLOR_SUCCESS = new Color(16, 185, 129);
 
     private CardLayout cardLayout;
     private JPanel mainContentPanel;
     private JPanel sidebar;
-    private JLabel lblSection;
     private final List<NavButton> navButtons = new ArrayList<>();
 
     public StudentDashboardUI() {
-        setTitle("CỔNG THÔNG TIN SINH VIÊN - TRUNG TÂM ĐÀO TẠO");
+        this("SV01");
+    }
+
+    public StudentDashboardUI(String maSinhVien) {
+        this.maSinhVien = maSinhVien;
+
+        // Tải thuần dữ liệu từ MySQL (Không gán dữ liệu giả)
+        loadStudentProfileFromDB();
+
+        setTitle("CỔNG THÔNG TIN SINH VIÊN S-LINK - " + this.tenSinhVien.toUpperCase());
         setSize(1320, 800);
         setMinimumSize(new Dimension(1100, 650));
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -57,6 +68,7 @@ public class StudentDashboardUI extends JFrame {
         mainContentPanel.setBackground(COLOR_BG);
 
         mainContentPanel.add(createDashboardOverviewPanel(), "Dashboard");
+        mainContentPanel.add(createDangKyKhoaHocPanel(), "DangKy");
         mainContentPanel.add(createTKBPanel(), "TKB");
         mainContentPanel.add(createBangDiemPanel(), "BangDiem");
         mainContentPanel.add(createHocPhiPanel(), "HocPhi");
@@ -65,14 +77,41 @@ public class StudentDashboardUI extends JFrame {
         add(mainContentPanel, BorderLayout.CENTER);
     }
 
+    private void loadStudentProfileFromDB() {
+        Connection conn = DBConnection.getConnection();
+        if (conn == null) {
+            JOptionPane.showMessageDialog(this, "Không thể kết nối CSDL MySQL BTL!", "Lỗi Kết Nối", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        try {
+            String sql = "SELECT hs.ho_ten, hs.ngay_sinh, hs.trinh_do, hs.so_dien_thoai, hs.id_giao_vien, gv.ho_ten AS ten_gv " +
+                         "FROM Hoc_sinh hs " +
+                         "LEFT JOIN Giao_vien gv ON hs.id_giao_vien = gv.id_giao_vien " +
+                         "WHERE hs.ma_sinh_vien = ?";
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, maSinhVien);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                this.tenSinhVien = rs.getString("ho_ten");
+                this.ngaySinh = rs.getString("ngay_sinh");
+                this.trinhDo = rs.getString("trinh_do");
+                this.soDienThoai = rs.getString("so_dien_thoai");
+                this.idGiaoVien = rs.getString("id_giao_vien");
+                this.tenGiaoVien = (rs.getString("ten_gv") != null) ? rs.getString("ten_gv") : "Chưa phân công";
+            }
+            rs.close(); pstmt.close(); conn.close();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Lỗi SQL: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
     private static Font font(int style, int size) {
         return new Font("Segoe UI", style, size);
     }
 
-    // =====================================================================
-    //  ICON VECTOR
-    // =====================================================================
-    private enum IconType { HOME, CALENDAR, AWARD, WALLET, USER, BELL, LOGOUT }
+    private enum IconType { HOME, BOOK, CALENDAR, AWARD, WALLET, USER }
 
     private static void drawIcon(Graphics g, IconType type, int x, int y, int size, Color color) {
         Graphics2D g2 = (Graphics2D) g.create();
@@ -81,7 +120,7 @@ public class StudentDashboardUI extends JFrame {
         double s = size / 20.0;
         g2.scale(s, s);
         g2.setColor(color);
-        g2.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        g2.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
         switch (type) {
             case HOME:
                 Path2D roof = new Path2D.Float();
@@ -91,16 +130,19 @@ public class StudentDashboardUI extends JFrame {
                 body.moveTo(5, 8.5); body.lineTo(5, 16.5); body.lineTo(15, 16.5); body.lineTo(15, 8.5);
                 g2.draw(body);
                 break;
+            case BOOK:
+                g2.drawRoundRect(3, 3, 14, 14, 2, 2);
+                g2.drawLine(3, 7, 17, 7);
+                g2.drawLine(8, 7, 8, 17);
+                break;
             case CALENDAR:
                 g2.drawRoundRect(3, 4, 14, 13, 3, 3);
                 g2.drawLine(3, 8, 17, 8);
-                g2.drawLine(7, 2, 7, 5);
-                g2.drawLine(13, 2, 13, 5);
+                g2.drawLine(7, 2, 7, 5); g2.drawLine(13, 2, 13, 5);
                 break;
             case AWARD:
                 g2.drawOval(6, 3, 8, 8);
-                g2.drawLine(7, 11, 4, 17);
-                g2.drawLine(13, 11, 16, 17);
+                g2.drawLine(7, 11, 4, 17); g2.drawLine(13, 11, 16, 17);
                 break;
             case WALLET:
                 g2.drawRoundRect(2, 5, 16, 11, 4, 4);
@@ -110,20 +152,40 @@ public class StudentDashboardUI extends JFrame {
                 g2.drawOval(7, 3, 6, 6);
                 g2.drawArc(3, 12, 14, 12, 0, 180);
                 break;
-            case LOGOUT:
-                g2.drawArc(3, 3, 14, 14, 45, 270);
-                g2.drawLine(10, 2, 10, 10);
-                break;
-            default:
-                g2.drawOval(5, 5, 10, 10);
-                break;
         }
         g2.dispose();
     }
 
-    // =====================================================================
-    //  COMPONENTS TỰ VẼ
-    // =====================================================================
+    private static class PrimaryButton extends JButton {
+        PrimaryButton(String text) {
+            super(text);
+            setFont(font(Font.BOLD, 13));
+            setForeground(Color.WHITE);
+            setContentAreaFilled(false);
+            setFocusPainted(false);
+            setBorderPainted(false);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            setPreferredSize(new Dimension(210, 40));
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            if (getModel().isPressed()) {
+                g2.setColor(COLOR_PRIMARY_HOVER.darker());
+            } else if (getModel().isRollover()) {
+                g2.setColor(COLOR_PRIMARY_HOVER);
+            } else {
+                g2.setColor(COLOR_PRIMARY);
+            }
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    }
+
     private static class RoundedPanel extends JPanel {
         private final int radius;
         private final Color fill;
@@ -145,11 +207,9 @@ public class StudentDashboardUI extends JFrame {
     private static class NavButton extends JButton {
         private boolean active;
         private final IconType icon;
-        private final String fullText;
 
         NavButton(String text, IconType icon) {
             super(text);
-            this.fullText = text;
             this.icon = icon;
             setFont(font(Font.PLAIN, 14));
             setForeground(COLOR_TEXT_MAIN);
@@ -173,6 +233,7 @@ public class StudentDashboardUI extends JFrame {
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             if (active) {
                 g2.setColor(COLOR_ACTIVE_BG);
                 g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
@@ -197,10 +258,11 @@ public class StudentDashboardUI extends JFrame {
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g2.setColor(bg);
             g2.fillOval(0, 0, getWidth(), getHeight());
             g2.setColor(fg);
-            g2.setFont(font(Font.BOLD, 16));
+            g2.setFont(font(Font.BOLD, 15));
             FontMetrics fm = g2.getFontMetrics();
             int x = (getWidth() - fm.stringWidth(text)) / 2;
             int y = (getHeight() - fm.getHeight()) / 2 + fm.getAscent();
@@ -209,9 +271,6 @@ public class StudentDashboardUI extends JFrame {
         }
     }
 
-    // =====================================================================
-    //  THANH TRÊN CÙNG
-    // =====================================================================
     private JPanel createTopBar() {
         JPanel bar = new JPanel(new BorderLayout());
         bar.setBackground(Color.WHITE);
@@ -222,8 +281,8 @@ public class StudentDashboardUI extends JFrame {
         left.setOpaque(false);
         left.setBorder(new EmptyBorder(0, 14, 0, 0));
         left.add(new Badge("SV", COLOR_PRIMARY, Color.WHITE, 40));
-        
-        JLabel lblLogo = new JLabel("Cổng Sinh Viên");
+
+        JLabel lblLogo = new JLabel("Cổng Sinh Viên S-Link");
         lblLogo.setFont(font(Font.BOLD, 20));
         lblLogo.setForeground(COLOR_TEXT_MAIN);
         left.add(lblLogo);
@@ -232,22 +291,23 @@ public class StudentDashboardUI extends JFrame {
         right.setOpaque(false);
         right.setBorder(new EmptyBorder(0, 0, 0, 14));
 
-        String firstChar = STUDENT_NAME.substring(STUDENT_NAME.lastIndexOf(' ') + 1).substring(0, 1);
+        String firstChar = (tenSinhVien.length() > 0 && tenSinhVien.contains(" ")) 
+                ? tenSinhVien.substring(tenSinhVien.lastIndexOf(' ') + 1).substring(0, 1) 
+                : "S";
         right.add(new Badge(firstChar, COLOR_LIGHT_BLUE, COLOR_PRIMARY, 42));
 
         JPanel userDetail = new JPanel(new GridLayout(2, 1));
         userDetail.setOpaque(false);
-        JLabel lblUser = new JLabel(STUDENT_NAME);
+        JLabel lblUser = new JLabel(tenSinhVien);
         lblUser.setFont(font(Font.BOLD, 14));
         lblUser.setForeground(COLOR_TEXT_MAIN);
-        JLabel lblMssv = new JLabel(STUDENT_ID + " | " + STUDENT_CLASS);
+        JLabel lblMssv = new JLabel(maSinhVien + " | Trình độ: " + trinhDo);
         lblMssv.setFont(font(Font.PLAIN, 12));
         lblMssv.setForeground(COLOR_TEXT_MUTED);
         userDetail.add(lblUser);
         userDetail.add(lblMssv);
         right.add(userDetail);
 
-        // Nút Đăng xuất
         JButton btnLogout = new JButton("Đăng xuất");
         btnLogout.setFont(font(Font.BOLD, 13));
         btnLogout.setForeground(new Color(239, 68, 68));
@@ -258,11 +318,10 @@ public class StudentDashboardUI extends JFrame {
         btnLogout.setFocusPainted(false);
         btnLogout.setCursor(new Cursor(Cursor.HAND_CURSOR));
         btnLogout.addActionListener(e -> {
-            int confirm = JOptionPane.showConfirmDialog(this, "Bạn có muốn đăng xuất khỏi cổng sinh viên?",
-                    "Xác nhận đăng xuất", JOptionPane.YES_NO_OPTION);
+            int confirm = JOptionPane.showConfirmDialog(this, "Bạn có muốn đăng xuất khỏi hệ thống?", "Xác nhận", JOptionPane.YES_NO_OPTION);
             if (confirm == JOptionPane.YES_OPTION) {
-                this.dispose(); // Đóng giao diện Sinh viên
-                // Nếu có file LoginForm, bật lại: new LoginForm().setVisible(true);
+                this.dispose();
+                new LoginForm().setVisible(true);
             }
         });
         right.add(btnLogout);
@@ -272,16 +331,13 @@ public class StudentDashboardUI extends JFrame {
         return bar;
     }
 
-    // =====================================================================
-    //  SIDEBAR DÀNH CHO SINH VIÊN
-    // =====================================================================
     private JPanel createSidebar() {
         sidebar = new JPanel(new BorderLayout());
         sidebar.setPreferredSize(new Dimension(250, 0));
         sidebar.setBackground(Color.WHITE);
         sidebar.setBorder(BorderFactory.createMatteBorder(0, 0, 0, 1, COLOR_BORDER));
 
-        lblSection = new JLabel("GÓC SINH VIÊN");
+        JLabel lblSection = new JLabel("GÓC HỌC TẬP SINH VIÊN");
         lblSection.setFont(font(Font.BOLD, 11));
         lblSection.setForeground(COLOR_TEXT_MUTED);
         lblSection.setBorder(new EmptyBorder(24, 24, 12, 10));
@@ -292,12 +348,13 @@ public class StudentDashboardUI extends JFrame {
         navPanel.setBorder(new EmptyBorder(0, 12, 10, 12));
 
         NavButton btnDash = createNavButton("Tổng quan", IconType.HOME, "Dashboard");
+        NavButton btnDangKy = createNavButton("Đăng ký khóa học", IconType.BOOK, "DangKy");
         NavButton btnTKB = createNavButton("Thời khóa biểu", IconType.CALENDAR, "TKB");
-        NavButton btnDiem = createNavButton("Bảng điểm học tập", IconType.AWARD, "BangDiem");
-        NavButton btnHocPhi = createNavButton("Học phí & Hóa đơn", IconType.WALLET, "HocPhi");
+        NavButton btnDiem = createNavButton("Xem bảng điểm", IconType.AWARD, "BangDiem");
+        NavButton btnHocPhi = createNavButton("Hóa đơn học phí", IconType.WALLET, "HocPhi");
         NavButton btnProfile = createNavButton("Thông tin cá nhân", IconType.USER, "Profile");
 
-        NavButton[] all = {btnDash, btnTKB, btnDiem, btnHocPhi, btnProfile};
+        NavButton[] all = {btnDash, btnDangKy, btnTKB, btnDiem, btnHocPhi, btnProfile};
         for (int i = 0; i < all.length; i++) {
             navPanel.add(all[i]);
             if (i < all.length - 1) navPanel.add(Box.createRigidArea(new Dimension(0, 6)));
@@ -324,49 +381,93 @@ public class StudentDashboardUI extends JFrame {
         for (NavButton b : navButtons) b.setActive(b == active);
     }
 
-    // =====================================================================
-    //  1. TRANG TỔNG QUAN
-    // =====================================================================
     private JPanel createDashboardOverviewPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 20));
         panel.setBackground(COLOR_BG);
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        // Banner Chào Mừng
         RoundedPanel banner = new RoundedPanel(new BorderLayout(), 16, COLOR_LIGHT_BLUE);
         banner.setBorder(new EmptyBorder(20, 24, 20, 24));
-        JLabel lblWelcome = new JLabel("<html><b>Chào mừng " + STUDENT_NAME + "!</b><br>"
-                + "<font color='#64748B' size='3'>Chúc bạn có một ngày học tập hiệu quả tại Trung tâm.</font></html>");
+        JLabel lblWelcome = new JLabel("<html><b>Chào mừng " + tenSinhVien + "!</b><br>"
+                + "<font color='#475569' size='3'>Hệ thống tra cứu thông tin học tập và đăng ký khóa học S-Link.</font></html>");
         lblWelcome.setFont(font(Font.PLAIN, 18));
         lblWelcome.setForeground(COLOR_PRIMARY);
         banner.add(lblWelcome, BorderLayout.WEST);
 
-        // Thống kê cá nhân
+        int tongDiemThi = 0;
+        String tinhTrangThi = "Chưa thi";
+        int tongTienHocPhi = 0;
+
+        Connection conn = DBConnection.getConnection();
+        if (conn != null) {
+            try {
+                String sqlDiem = "SELECT tong_diem, tinh_trang FROM Ket_qua_thi WHERE ma_sinh_vien = ? ORDER BY ma_bai_lam DESC LIMIT 1";
+                PreparedStatement pstDiem = conn.prepareStatement(sqlDiem);
+                pstDiem.setString(1, maSinhVien);
+                ResultSet rsDiem = pstDiem.executeQuery();
+                if (rsDiem.next()) {
+                    tongDiemThi = rsDiem.getInt("tong_diem");
+                    tinhTrangThi = rsDiem.getString("tinh_trang").toUpperCase();
+                }
+                rsDiem.close(); pstDiem.close();
+
+                String sqlHP = "SELECT SUM(khoan_thu) AS tong FROM hoa_don WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%')";
+                PreparedStatement pstHP = conn.prepareStatement(sqlHP);
+                pstHP.setString(1, maSinhVien);
+                pstHP.setString(2, maSinhVien);
+                ResultSet rsHP = pstHP.executeQuery();
+                if (rsHP.next()) {
+                    tongTienHocPhi = rsHP.getInt("tong");
+                }
+                rsHP.close(); pstHP.close();
+                conn.close();
+            } catch (Exception ignored) {}
+        }
+
+        String tongTienFmt = String.format("%,d VNĐ", tongTienHocPhi).replace(',', '.');
+
         JPanel stats = new JPanel(new GridLayout(1, 4, 16, 0));
         stats.setOpaque(false);
-        stats.add(createStatCard("Số khóa đang học", "1 Khóa", "Tiếng Nhật N4", COLOR_PRIMARY));
-        stats.add(createStatCard("Số buổi đã học", "18/30 Buổi", "Đạt 60% tiến trình", new Color(16, 185, 129)));
-        stats.add(createStatCard("Chuyên cần", "95%", "Vắng 1 buổi (Có phép)", new Color(245, 158, 11)));
-        stats.add(createStatCard("Học phí đợt này", "Đã nộp", "Hoàn thành 100%", new Color(13, 148, 136)));
+        stats.add(createStatCard("Mã Sinh Viên", maSinhVien, "Trình độ: " + trinhDo, COLOR_PRIMARY));
+        stats.add(createStatCard("GV Phụ Trách", tenGiaoVien, "Mã GV: " + idGiaoVien, COLOR_SUCCESS));
+        stats.add(createStatCard("Điểm thi mới nhất", tongDiemThi + " Điểm", "Tình trạng: " + tinhTrangThi, new Color(245, 158, 11)));
+        stats.add(createStatCard("Tổng học phí đã nộp", tongTienFmt, "Trạng thái: Đã ghi nhận", new Color(13, 148, 136)));
 
-        // Lịch học sắp tới & Thông báo
         JPanel centerGrid = new JPanel(new GridLayout(1, 2, 16, 0));
         centerGrid.setOpaque(false);
 
-        RoundedPanel cardSchedule = createCard("Lịch học tiếp theo");
-        String[] colsTKB = {"Ngày học", "Giờ học", "Phòng", "Bài học"};
-        DefaultTableModel modelTKB = new DefaultTableModel(colsTKB, 0);
-        modelTKB.addRow(new Object[]{"Thứ 2 (Hôm nay)", "18:00 - 20:00", "P.302", "Bài 15: Cấu trúc ~te mo ii desu"});
-        modelTKB.addRow(new Object[]{"Thứ 4 (30/10)", "18:00 - 20:00", "P.302", "Luyện Kaiwa & Luyện nghe N4"});
-        modelTKB.addRow(new Object[]{"Thứ 6 (01/11)", "18:00 - 20:00", "P.302", "Kiểm tra giữa khóa"});
-        JTable tableTKB = createCustomTable(modelTKB);
-        cardSchedule.add(createScroll(tableTKB), BorderLayout.CENTER);
+        RoundedPanel cardSchedule = createCard("Lịch học tiếp theo (Lich_hoc)");
+        String[] cols = {"Ngày dạy", "Ca học", "Phòng", "Nội dung"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0);
+
+        Connection connLich = DBConnection.getConnection();
+        if (connLich != null) {
+            try {
+                String sqlLich = "SELECT lh.* FROM Lich_hoc lh " +
+                                 "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien " +
+                                 "WHERE hs.ma_sinh_vien = ? LIMIT 5";
+                PreparedStatement pstLich = connLich.prepareStatement(sqlLich);
+                pstLich.setString(1, maSinhVien);
+                ResultSet rsLich = pstLich.executeQuery();
+                while (rsLich.next()) {
+                    model.addRow(new Object[]{
+                        rsLich.getString("ngay_day"),
+                        rsLich.getString("ca_hoc"),
+                        rsLich.getString("phong_hoc"),
+                        rsLich.getString("noi_dung")
+                    });
+                }
+                rsLich.close(); pstLich.close(); connLich.close();
+            } catch (Exception ignored) {}
+        }
+
+        cardSchedule.add(createScroll(createCustomTable(model)), BorderLayout.CENTER);
 
         RoundedPanel cardNotice = createCard("Thông báo từ Trung tâm");
         DefaultListModel<String> noticeModel = new DefaultListModel<>();
-        noticeModel.addElement("📌 [02/11] Lịch thi thử JLPT N4 cấp chứng chỉ trung tâm.");
+        noticeModel.addElement("📌 [02/11] Lịch thi JLPT thử đánh giá trình độ.");
         noticeModel.addElement("📌 [05/11] Đăng ký câu lạc bộ Tiếng Nhật Kaiwa cuối tuần.");
-        noticeModel.addElement("📌 [10/11] Nghỉ lễ theo quy định của trung tâm.");
+        noticeModel.addElement("📌 [Nhắc nhở] Đảm bảo chuyên cần để đạt tiêu chuẩn dự thi.");
         JList<String> listNotice = new JList<>(noticeModel);
         listNotice.setFont(font(Font.PLAIN, 13));
         listNotice.setFixedCellHeight(38);
@@ -382,29 +483,149 @@ public class StudentDashboardUI extends JFrame {
 
         panel.add(topStack, BorderLayout.NORTH);
         panel.add(centerGrid, BorderLayout.CENTER);
-
         return panel;
     }
 
-    // =====================================================================
-    //  2. THỜI KHÓA BIỂU
-    // =====================================================================
+    private JPanel createDangKyKhoaHocPanel() {
+        JPanel panel = new JPanel(new BorderLayout(0, 18));
+        panel.setBackground(COLOR_BG);
+        panel.setBorder(new EmptyBorder(24, 28, 24, 28));
+
+        JLabel title = new JLabel("Đăng ký Khóa học mới (N5 - N1)");
+        title.setFont(font(Font.BOLD, 20));
+        title.setForeground(COLOR_TEXT_MAIN);
+
+        RoundedPanel card = createCard("Danh sách các Khóa học chưa đăng ký");
+        String[] cols = {"Mã Khóa", "Tên Khóa Học", "Trình Độ", "Chuyên Đề", "Giáo Trình", "Học Phí (VNĐ)"};
+        DefaultTableModel model = new DefaultTableModel(cols, 0);
+
+        JTable table = createCustomTable(model);
+        card.add(createScroll(table), BorderLayout.CENTER);
+
+        PrimaryButton btnDangKyClick = new PrimaryButton("Đăng ký khóa đã chọn");
+        btnDangKyClick.addActionListener(e -> {
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow < 0) {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn 1 khóa học trong bảng để đăng ký!", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String maKhocHoc = model.getValueAt(selectedRow, 0).toString();
+            String tenKhocHoc = model.getValueAt(selectedRow, 1).toString();
+            String hocPhiStr = model.getValueAt(selectedRow, 5).toString().replace(".", "").replace(" VNĐ", "").trim();
+            int hocPhi = Integer.parseInt(hocPhiStr);
+
+            int confirm = JOptionPane.showConfirmDialog(this, 
+                "XÁC NHẬN ĐĂNG KÝ KHÓA HỌC:\n- Sinh viên: " + tenSinhVien + " (" + maSinhVien + ")\n- Khóa học: " + tenKhocHoc + "\n- Học phí: " + model.getValueAt(selectedRow, 5), 
+                "Xác nhận ghi danh", JOptionPane.YES_NO_OPTION);
+
+            if (confirm == JOptionPane.YES_OPTION) {
+                boolean ok = processDangKyInDB(maKhocHoc, hocPhi);
+                if (ok) {
+                    JOptionPane.showMessageDialog(this, "🎉 Đăng ký thành công! Hóa đơn đã được lưu vào CSDL MySQL.", "Thành công", JOptionPane.INFORMATION_MESSAGE);
+                    loadCoursesFromDB(model);
+                }
+            }
+        });
+
+        JPanel foot = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        foot.setOpaque(false);
+        foot.add(btnDangKyClick);
+        card.add(foot, BorderLayout.SOUTH);
+
+        loadCoursesFromDB(model);
+
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(card, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private void loadCoursesFromDB(DefaultTableModel model) {
+        model.setRowCount(0);
+        Connection conn = DBConnection.getConnection();
+        if (conn == null) return;
+
+        try {
+            String sql = "SELECT * FROM Khoa_hoc " +
+                         "WHERE ma_khoa_hoc NOT IN (" +
+                         "   SELECT ma_ghi_danh FROM hoa_don " +
+                         "   WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%') OR ma_ghi_danh = Khoa_hoc.ma_khoa_hoc" +
+                         ") ORDER BY trinh_do DESC";
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, maSinhVien);
+            pstmt.setString(2, maSinhVien);
+            ResultSet rs = pstmt.executeQuery();
+
+            while (rs.next()) {
+                int hocPhi = rs.getInt("hoc_phi");
+                String hocPhiFormatted = String.format("%,d VNĐ", hocPhi).replace(',', '.');
+                model.addRow(new Object[]{
+                    rs.getString("ma_khoa_hoc"),
+                    rs.getString("ten_khoa_hoc"),
+                    rs.getString("trinh_do"),
+                    rs.getString("chuyen_de"),
+                    rs.getString("giao_trinh"),
+                    hocPhiFormatted
+                });
+            }
+            rs.close(); pstmt.close(); conn.close();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Lỗi nạp khóa học: " + e.getMessage(), "Lỗi SQL", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private boolean processDangKyInDB(String maKhoaHoc, int hocPhi) {
+        Connection conn = DBConnection.getConnection();
+        if (conn == null) return false;
+        try {
+            String maHoaDon = "HD_" + (System.currentTimeMillis() / 1000);
+            String sql = "INSERT INTO hoa_don (ma_hoa_don, ma_nhan_vien, ma_ghi_danh, khoan_thu, ngay_lap, hinh_thuc) " +
+                         "VALUES (?, 'NV01', ?, ?, NOW(), 'Chuyển khoản')";
+            PreparedStatement pstmt = conn.prepareStatement(sql);
+            pstmt.setString(1, maHoaDon);
+            pstmt.setString(2, maSinhVien + ":" + maKhoaHoc);
+            pstmt.setInt(3, hocPhi);
+            int rows = pstmt.executeUpdate();
+            pstmt.close(); conn.close();
+            return rows > 0;
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Lỗi SQL: " + e.getMessage(), "Lỗi", JOptionPane.ERROR_MESSAGE);
+            return false;
+        }
+    }
+
     private JPanel createTKBPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 18));
         panel.setBackground(COLOR_BG);
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        JLabel title = new JLabel("Lịch học & Điểm danh chi tiết");
+        JLabel title = new JLabel("Lịch học & Trạng thái Buổi dạy (Bảng Lich_hoc)");
         title.setFont(font(Font.BOLD, 20));
         title.setForeground(COLOR_TEXT_MAIN);
 
-        RoundedPanel card = createCard("Danh sách các buổi học khóa Tiếng Nhật N4");
-        String[] cols = {"Buổi số", "Ngày học", "Giảng viên", "Trạng thái điểm danh", "Ghi chú"};
+        RoundedPanel card = createCard("Chi tiết các buổi học");
+        String[] cols = {"Mã Lịch Học", "Ngày Dạy", "Ca Học", "Phòng Học", "Nội Dung", "Trạng Thái Buổi"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
-        model.addRow(new Object[]{"Buổi 1", "02/10/2026", "Sensei Tanaka", "Có mặt", "Học Bài 11"});
-        model.addRow(new Object[]{"Buổi 2", "05/10/2026", "Sensei Tanaka", "Có mặt", "Học Bài 12"});
-        model.addRow(new Object[]{"Buổi 3", "09/10/2026", "Sensei Tanaka", "Vắng (Có phép)", "Xin nghỉ bệnh"});
-        model.addRow(new Object[]{"Buổi 4", "12/10/2026", "Sensei Tanaka", "Có mặt", "Luyện Kaiwa"});
+
+        Connection conn = DBConnection.getConnection();
+        if (conn != null) {
+            try {
+                String sql = "SELECT lh.* FROM Lich_hoc lh " +
+                             "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien " +
+                             "WHERE hs.ma_sinh_vien = ?";
+                PreparedStatement pstmt = conn.prepareStatement(sql);
+                pstmt.setString(1, maSinhVien);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    model.addRow(new Object[]{
+                        rs.getString("ma_lich_hoc"), rs.getString("ngay_day"),
+                        rs.getString("ca_hoc"), rs.getString("phong_hoc"),
+                        rs.getString("noi_dung"), rs.getString("trang_thai_buoi")
+                    });
+                }
+                rs.close(); pstmt.close(); conn.close();
+            } catch (Exception ignored) {}
+        }
 
         JTable table = createCustomTable(model);
         card.add(createScroll(table), BorderLayout.CENTER);
@@ -414,24 +635,37 @@ public class StudentDashboardUI extends JFrame {
         return panel;
     }
 
-    // =====================================================================
-    //  3. BẢNG ĐIỂM HỌC TẬP
-    // =====================================================================
     private JPanel createBangDiemPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 18));
         panel.setBackground(COLOR_BG);
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        JLabel title = new JLabel("Kết quả học tập & Điểm thi");
+        JLabel title = new JLabel("Kết quả bài làm & Điểm thi (Bảng Ket_qua_thi)");
         title.setFont(font(Font.BOLD, 20));
         title.setForeground(COLOR_TEXT_MAIN);
 
-        RoundedPanel card = createCard("Bảng điểm kiểm tra định kỳ");
-        String[] cols = {"Tên bài thi / Kiểm tra", "Điểm Từ vựng", "Điểm Đọc hiểu", "Điểm Nghe", "Tổng điểm", "Đánh giá"};
+        RoundedPanel card = createCard("Bảng điểm kiểm tra trình độ");
+        String[] cols = {"Mã Bài Làm", "Trình Độ", "Mã Đề Thi", "Đọc Hiểu", "Từ Vựng", "Nghe", "Tổng Điểm", "Tình Trạng"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
-        model.addRow(new Object[]{"Kiểm tra 15p - Bài 10", "90/100", "85/100", "80/100", "85.0", "Đạt"});
-        model.addRow(new Object[]{"Kiểm tra Giữa khóa N5", "95/100", "90/100", "88/100", "91.0", "Xuất sắc"});
-        model.addRow(new Object[]{"Thi thử JLPT N5", "80/100", "75/100", "70/100", "75.0", "Đạt"});
+
+        Connection conn = DBConnection.getConnection();
+        if (conn != null) {
+            try {
+                String sql = "SELECT * FROM Ket_qua_thi WHERE ma_sinh_vien = ?";
+                PreparedStatement pstmt = conn.prepareStatement(sql);
+                pstmt.setString(1, maSinhVien);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    model.addRow(new Object[]{
+                        rs.getString("ma_bai_lam"), rs.getString("trinh_do"),
+                        rs.getString("ma_de_thi"), rs.getInt("diem_doc_hieu"),
+                        rs.getInt("diem_tu_vung"), rs.getInt("diem_nghe"),
+                        rs.getInt("tong_diem"), rs.getString("tinh_trang")
+                    });
+                }
+                rs.close(); pstmt.close(); conn.close();
+            } catch (Exception ignored) {}
+        }
 
         JTable table = createCustomTable(model);
         card.add(createScroll(table), BorderLayout.CENTER);
@@ -441,23 +675,39 @@ public class StudentDashboardUI extends JFrame {
         return panel;
     }
 
-    // =====================================================================
-    //  4. HỌC PHÍ & HÓA ĐƠN
-    // =====================================================================
     private JPanel createHocPhiPanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 18));
         panel.setBackground(COLOR_BG);
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        JLabel title = new JLabel("Lịch sử nộp học phí");
+        JLabel title = new JLabel("Lịch sử nộp học phí (Bảng hoa_don)");
         title.setFont(font(Font.BOLD, 20));
         title.setForeground(COLOR_TEXT_MAIN);
 
-        RoundedPanel card = createCard("Thông tin các đợt thanh toán");
-        String[] cols = {"Mã hóa đơn", "Tên khóa học", "Số tiền (VNĐ)", "Ngày thanh toán", "Hình thức", "Trạng thái"};
+        RoundedPanel card = createCard("Các hóa đơn đã được lập");
+        String[] cols = {"Mã Hóa Đơn", "Mã Ghi Danh / Khóa", "Khoản Thu (VNĐ)", "Ngày Lập", "Hình Thức", "Trạng Thái"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
-        model.addRow(new Object[]{"HD-2026-01", "Tiếng Nhật N5 Sơ cấp", "3.500.000", "10/01/2026", "Chuyển khoản", "Đã thanh toán"});
-        model.addRow(new Object[]{"HD-2026-04", "Tiếng Nhật N4 Trung cấp", "4.200.000", "15/08/2026", "Tiền mặt", "Đã thanh toán"});
+
+        Connection conn = DBConnection.getConnection();
+        if (conn != null) {
+            try {
+                String sql = "SELECT * FROM hoa_don WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%')";
+                PreparedStatement pstmt = conn.prepareStatement(sql);
+                pstmt.setString(1, maSinhVien);
+                pstmt.setString(2, maSinhVien);
+                ResultSet rs = pstmt.executeQuery();
+                while (rs.next()) {
+                    int thu = rs.getInt("khoan_thu");
+                    String thuFmt = String.format("%,d VNĐ", thu).replace(',', '.');
+                    model.addRow(new Object[]{
+                        rs.getString("ma_hoa_don"), rs.getString("ma_ghi_danh"),
+                        thuFmt, rs.getString("ngay_lap"),
+                        rs.getString("hinh_thuc"), "Đã thanh toán"
+                    });
+                }
+                rs.close(); pstmt.close(); conn.close();
+            } catch (Exception ignored) {}
+        }
 
         JTable table = createCustomTable(model);
         card.add(createScroll(table), BorderLayout.CENTER);
@@ -467,31 +717,28 @@ public class StudentDashboardUI extends JFrame {
         return panel;
     }
 
-    // =====================================================================
-    //  5. THÔNG TIN CÁ NHÂN
-    // =====================================================================
     private JPanel createProfilePanel() {
         JPanel panel = new JPanel(new BorderLayout(0, 18));
         panel.setBackground(COLOR_BG);
         panel.setBorder(new EmptyBorder(24, 28, 24, 28));
 
-        JLabel title = new JLabel("Thông tin cá nhân sinh viên");
+        JLabel title = new JLabel("Thông tin cá nhân Sinh viên (Bảng Hoc_sinh)");
         title.setFont(font(Font.BOLD, 20));
         title.setForeground(COLOR_TEXT_MAIN);
 
-        RoundedPanel card = createCard("Hồ sơ học viên");
+        RoundedPanel card = createCard("Hồ sơ học sinh từ CSDL MySQL BTL");
         JPanel infoGrid = new JPanel(new GridLayout(4, 2, 18, 18));
         infoGrid.setOpaque(false);
         infoGrid.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        infoGrid.add(createProfileItem("Họ và tên:", STUDENT_NAME));
-        infoGrid.add(createProfileItem("Mã sinh viên:", STUDENT_ID));
-        infoGrid.add(createProfileItem("Lớp hiện tại:", STUDENT_CLASS));
-        infoGrid.add(createProfileItem("Ngày sinh:", "05/12/2006"));
-        infoGrid.add(createProfileItem("Số điện thoại:", "0912345678"));
-        infoGrid.add(createProfileItem("Email:", "dung.dt@gmail.com"));
-        infoGrid.add(createProfileItem("Địa chỉ:", "Hà Nội, Việt Nam"));
-        infoGrid.add(createProfileItem("Trạng thái học tập:", "Đang theo học"));
+        infoGrid.add(createProfileItem("Mã Sinh Viên (ma_sinh_vien):", maSinhVien));
+        infoGrid.add(createProfileItem("Họ Tên (ho_ten):", tenSinhVien));
+        infoGrid.add(createProfileItem("Ngày Sinh (ngay_sinh):", ngaySinh));
+        infoGrid.add(createProfileItem("Trình Độ (trinh_do):", trinhDo));
+        infoGrid.add(createProfileItem("Số Điện Thoại (so_dien_thoai):", soDienThoai));
+        infoGrid.add(createProfileItem("Mã GV Phụ Trách (id_giao_vien):", idGiaoVien));
+        infoGrid.add(createProfileItem("Tên Giáo Viên Phụ Trách:", tenGiaoVien));
+        infoGrid.add(createProfileItem("Trạng Thái Học Tập:", "Đang theo học"));
 
         card.add(infoGrid, BorderLayout.CENTER);
 
@@ -514,9 +761,6 @@ public class StudentDashboardUI extends JFrame {
         return p;
     }
 
-    // =====================================================================
-    //  HELPER METHOD
-    // =====================================================================
     private RoundedPanel createCard(String title) {
         RoundedPanel card = new RoundedPanel(new BorderLayout(0, 14), 16, COLOR_CARD);
         card.setBorder(new EmptyBorder(18, 20, 20, 20));
