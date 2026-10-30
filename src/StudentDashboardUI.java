@@ -217,7 +217,7 @@ public class StudentDashboardUI extends JFrame {
         return new Font("Segoe UI", style, size);
     }
 
-    private enum IconType { HOME, BOOK, CALENDAR, AWARD, WALLET, STAR, USER }
+    private enum IconType { HOME, BOOK, CALENDAR, AWARD, WALLET, STAR, BELL, USER }
 
     private static void drawIcon(Graphics g, IconType type, int x, int y, int size, Color color) {
         Graphics2D g2 = (Graphics2D) g.create();
@@ -264,6 +264,15 @@ public class StudentDashboardUI extends JFrame {
                 }
                 st.closePath();
                 g2.draw(st);
+                break;
+            case BELL:
+                Path2D bl = new Path2D.Float();
+                bl.moveTo(3.5, 15); bl.curveTo(5.2, 13.5, 5.5, 11.5, 5.5, 8.5);
+                bl.curveTo(5.5, 5.5, 7.5, 3.8, 10, 3.8); bl.curveTo(12.5, 3.8, 14.5, 5.5, 14.5, 8.5);
+                bl.curveTo(14.5, 11.5, 14.8, 13.5, 16.5, 15); bl.closePath();
+                g2.draw(bl);
+                g2.drawArc(8, 14, 4, 4, 180, 180);
+                g2.drawLine(10, 2, 10, 4);
                 break;
             case USER:
                 g2.drawOval(7, 3, 6, 6);
@@ -647,9 +656,9 @@ public class StudentDashboardUI extends JFrame {
 
         RoundedPanel cardNotice = createCard("Thông báo từ Trung tâm");
         DefaultListModel<String> noticeModel = new DefaultListModel<>();
-        noticeModel.addElement("📌 [02/11] Lịch thi JLPT thử đánh giá trình độ.");
-        noticeModel.addElement("📌 [05/11] Đăng ký câu lạc bộ Tiếng Nhật Kaiwa cuối tuần.");
-        noticeModel.addElement("📌 [Nhắc nhở] Đảm bảo chuyên cần để đạt tiêu chuẩn dự thi.");
+        noticeModel.addElement("[02/11] Lịch thi JLPT thử đánh giá trình độ.");
+        noticeModel.addElement("[05/11] Đăng ký câu lạc bộ Tiếng Nhật Kaiwa cuối tuần.");
+        noticeModel.addElement("[Nhắc nhở] Đảm bảo chuyên cần để đạt tiêu chuẩn dự thi.");
         JList<String> listNotice = new JList<>(noticeModel);
         listNotice.setFont(font(Font.PLAIN, 13));
         listNotice.setFixedCellHeight(44);
@@ -659,6 +668,8 @@ public class StudentDashboardUI extends JFrame {
             @Override
             public Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean sel, boolean foc) {
                 JLabel lb = (JLabel) super.getListCellRendererComponent(l, v, i, sel, false);
+                lb.setIcon(new BellIcon(COLOR_NAV_ICON, 20));
+                lb.setIconTextGap(12);
                 lb.setBorder(BorderFactory.createCompoundBorder(
                         BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(241, 245, 249)),
                         new EmptyBorder(0, 10, 0, 10)));
@@ -724,7 +735,7 @@ public class StudentDashboardUI extends JFrame {
         JPanel center = new JPanel(new BorderLayout(0, 10));
         center.setOpaque(false);
         center.add(txtSearch, BorderLayout.NORTH);
-        center.add(createScroll(table, "Bạn đã đăng ký tất cả khóa học hiện có 🎉"), BorderLayout.CENTER);
+        center.add(createScroll(table, "Bạn đã đăng ký tất cả khóa học hiện có"), BorderLayout.CENTER);
         card.add(center, BorderLayout.CENTER);
 
         PrimaryButton btnDangKyClick = new PrimaryButton("Đăng ký & thanh toán");
@@ -746,7 +757,7 @@ public class StudentDashboardUI extends JFrame {
                     "Xác nhận ghi danh", JOptionPane.YES_NO_OPTION);
 
             if (confirm == JOptionPane.YES_OPTION && processDangKyInDB(maKhoaHoc, hocPhi)) {
-                JOptionPane.showMessageDialog(this, "🎉 Đăng ký thành công!\nHóa đơn ở trạng thái CHƯA NỘP, vui lòng thanh toán và chờ nhân viên xác nhận.", "Thành công", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Đăng ký thành công!\nHóa đơn ở trạng thái CHƯA NỘP, vui lòng thanh toán và chờ nhân viên xác nhận.", "Thành công", JOptionPane.INFORMATION_MESSAGE);
                 showCard("DangKy"); // dựng lại để khóa vừa đăng ký biến mất khỏi danh sách
             }
         });
@@ -1195,6 +1206,32 @@ public class StudentDashboardUI extends JFrame {
                 g2.fill(star);
             }
             g2.dispose();
+        }
+    }
+
+    /** Icon cái chuông dạng nét viền, cùng phong cách với các icon ở menu bên trái. */
+    private static class BellIcon implements Icon {
+        private final Color color;
+        private final int size;
+
+        BellIcon(Color color, int size) {
+            this.color = color;
+            this.size = size;
+        }
+
+        @Override
+        public int getIconWidth() {
+            return size;
+        }
+
+        @Override
+        public int getIconHeight() {
+            return size;
+        }
+
+        @Override
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            drawIcon(g, IconType.BELL, x, y, size, color);
         }
     }
 
