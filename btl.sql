@@ -1,4 +1,12 @@
-use BTL;
+CREATE DATABASE IF NOT EXISTS btl CHARACTER SET utf8mb4;
+USE btl;
+create table Nhan_vien(
+ma_nhan_vien varchar(50) not null primary key,
+ho_ten varchar(50) not null,
+vai_tro varchar(50) not null,
+luong int not null
+);
+
 create table hoa_don(
 ma_hoa_don varchar(50) not null primary key,
 ma_nhan_vien varchar(50) not null,
@@ -8,12 +16,6 @@ khoan_thu int not null,
 ngay_lap timestamp not null,
 hinh_thuc varchar(20) not null,
 foreign key(ma_nhan_vien) references Nhan_vien(ma_nhan_vien)
-);
-create table Nhan_vien(
-ma_nhan_vien varchar(50) not null primary key,
-ho_ten varchar(50) not null,
-vai_tro varchar(50) not null,
-luong int not null
 );
 
 create table Khoa_hoc(
@@ -99,7 +101,11 @@ ngay_gui timestamp not null,
 foreign key(ma_sinh_vien) references Hoc_sinh(ma_sinh_vien),
 foreign key(id_lop) references Lop(id_lop)
 );
-
+create table De_thi(
+ma_de_thi varchar(50) not null primary key,
+cap_do varchar(50) not null,
+thoi_gian int not null
+);
 create table Ket_qua_thi(
 ma_bai_lam varchar(50) not null primary key,
 ma_sinh_vien varchar(50) not null,
@@ -109,15 +115,12 @@ diem_doc_hieu int not null,
 diem_tu_vung int not null,
 diem_nghe int not null,
 tong_diem int not null,
+tinh_trang varchar(20),
 foreign key (ma_sinh_vien) references Hoc_sinh(ma_sinh_vien),
 foreign key (ma_de_thi) references De_thi(ma_de_thi)
 );
 
-create table De_thi(
-ma_de_thi varchar(50) not null primary key,
-cap_do varchar(50) not null,
-thoi_gian int not null
-);
+
 SET SQL_SAFE_UPDATES = 0;
 
 UPDATE Ket_qua_thi  

@@ -118,7 +118,7 @@ public class AdminDashboard extends JFrame {
         initWords();
  
         try {
-            conn = KetNoiSQL.ketNoi();
+        	   conn = DBConnection.getConnection();
  
             if (conn == null || conn.isClosed()) {
                 throw new SQLException("Không có kết nối MySQL.");
@@ -140,7 +140,7 @@ public class AdminDashboard extends JFrame {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this,
                     "Không kết nối được MySQL!\n"
-                    + "Kiểm tra database btl và file KetNoiSQL.java.\n\n"
+                    + "Kiểm tra database btl và file DBConnection.java.\n\n"
                     + e.getMessage(),
                     "Lỗi kết nối", JOptionPane.ERROR_MESSAGE);
             dispose();
@@ -218,20 +218,38 @@ public class AdminDashboard extends JFrame {
         admin.setForeground(TEXT);
         admin.setFont(new Font("Segoe UI", Font.PLAIN, 14));
  
-        JButton logout = new RoundButton("Đăng xuất", 10, Color.WHITE, TEXT, BORDER);
-        ((RoundButton) logout).setFixedHeight(36);
-        logout.addActionListener(e -> {
-            int answer = JOptionPane.showConfirmDialog(this,
-                    "Bạn có muốn thoát khỏi trang quản trị không?",
-                    "Xác nhận đăng xuất", JOptionPane.YES_NO_OPTION);
-            if (answer == JOptionPane.YES_OPTION) {
-                try {
-                    if (conn != null) conn.close();
-                } catch (SQLException ignored) {
-                }
-                dispose();
+
+JButton logout = new RoundButton("Đăng xuất", 10, Color.WHITE, TEXT, BORDER);
+((RoundButton) logout).setFixedHeight(36);
+
+logout.addActionListener(e -> {
+    int answer = JOptionPane.showConfirmDialog(
+            this,
+            "Bạn có muốn đăng xuất khỏi hệ thống không?",
+            "Xác nhận đăng xuất",
+            JOptionPane.YES_NO_OPTION
+    );
+
+    if (answer == JOptionPane.YES_OPTION) {
+
+        // Đóng kết nối database
+        try {
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
             }
-        });
+        } catch (SQLException ex) {
+            ex.printStackTrace();
+        }
+
+        // Mở lại màn hình LoginForm
+        LoginForm login = new LoginForm();
+        login.setVisible(true);
+
+        // Đóng AdminDashboard
+        dispose();
+    }
+});
+
  
         right.add(admin);
         right.add(logout);
