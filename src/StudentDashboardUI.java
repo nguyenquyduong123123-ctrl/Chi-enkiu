@@ -3,16 +3,21 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.JTableHeader;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.geom.Path2D;
 import java.awt.geom.RoundRectangle2D;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -89,6 +94,7 @@ public class StudentDashboardUI extends JFrame {
         builders.put("TKB", this::createTKBPanel);
         builders.put("BangDiem", this::createBangDiemPanel);
         builders.put("HocPhi", this::createHocPhiPanel);
+        builders.put("DanhGia", this::createDanhGiaPanel);
         builders.put("Profile", this::createProfilePanel);
 
         add(createTopBar(), BorderLayout.NORTH);
@@ -145,7 +151,7 @@ public class StudentDashboardUI extends JFrame {
                 try (ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
                         tenSinhVien = nz(rs.getString("ho_ten"));
-                        ngaySinh = nz(rs.getString("ngay_sinh"));
+                        ngaySinh = fmt(rs.getTimestamp("ngay_sinh"), DATE_FMT);
                         trinhDo = nz(rs.getString("trinh_do"));
                         soDienThoai = nz(rs.getString("so_dien_thoai"));
                         idGiaoVien = nz(rs.getString("id_giao_vien"));
@@ -161,6 +167,33 @@ public class StudentDashboardUI extends JFrame {
 
     private static String nz(String s) {
         return s == null ? "" : s;
+    }
+
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+    private static String fmt(Timestamp ts, DateTimeFormatter f) {
+        return ts == null ? "" : ts.toLocalDateTime().format(f);
+    }
+
+    /** CSDL lưu 'day' / 'nghi' -> hiển thị tiếng Việt. */
+    private static String buoi(String s) {
+        if (s == null) return "";
+        switch (s.trim().toLowerCase()) {
+            case "day": return "Có dạy";
+            case "nghi": return "Nghỉ";
+            default: return s;
+        }
+    }
+
+    /** CSDL lưu 'dat' / 'truot' -> hiển thị tiếng Việt. */
+    private static String ketQua(String s) {
+        if (s == null) return "Chưa thi";
+        switch (s.trim().toLowerCase()) {
+            case "dat": return "Đạt";
+            case "truot": return "Trượt";
+            default: return s;
+        }
     }
 
     private static String vnd(long n) {
@@ -184,7 +217,7 @@ public class StudentDashboardUI extends JFrame {
         return new Font("Segoe UI", style, size);
     }
 
-    private enum IconType { HOME, BOOK, CALENDAR, AWARD, WALLET, USER }
+    private enum IconType { HOME, BOOK, CALENDAR, AWARD, WALLET, STAR, USER }
 
     private static void drawIcon(Graphics g, IconType type, int x, int y, int size, Color color) {
         Graphics2D g2 = (Graphics2D) g.create();
@@ -220,6 +253,17 @@ public class StudentDashboardUI extends JFrame {
             case WALLET:
                 g2.drawRoundRect(2, 5, 16, 11, 4, 4);
                 g2.drawOval(7, 7, 6, 6);
+                break;
+            case STAR:
+                Path2D st = new Path2D.Float();
+                for (int i = 0; i < 10; i++) {
+                    double r = (i % 2 == 0) ? 8 : 3.6;
+                    double a = -Math.PI / 2 + i * Math.PI / 5;
+                    double px = 10 + r * Math.cos(a), py = 10.5 + r * Math.sin(a);
+                    if (i == 0) st.moveTo(px, py); else st.lineTo(px, py);
+                }
+                st.closePath();
+                g2.draw(st);
                 break;
             case USER:
                 g2.drawOval(7, 3, 6, 6);
@@ -477,9 +521,10 @@ public class StudentDashboardUI extends JFrame {
         NavButton btnTKB = createNavButton("Thời khóa biểu", IconType.CALENDAR, "TKB");
         NavButton btnDiem = createNavButton("Xem bảng điểm", IconType.AWARD, "BangDiem");
         NavButton btnHocPhi = createNavButton("Hóa đơn học phí", IconType.WALLET, "HocPhi");
+        NavButton btnDanhGia = createNavButton("Đánh giá giảng dạy", IconType.STAR, "DanhGia");
         NavButton btnProfile = createNavButton("Thông tin cá nhân", IconType.USER, "Profile");
 
-        NavButton[] all = {btnDash, btnDangKy, btnTKB, btnDiem, btnHocPhi, btnProfile};
+        NavButton[] all = {btnDash, btnDangKy, btnTKB, btnDiem, btnHocPhi, btnDanhGia, btnProfile};
         for (int i = 0; i < all.length; i++) {
             navPanel.add(all[i]);
             if (i < all.length - 1) navPanel.add(Box.createRigidArea(new Dimension(0, 6)));
@@ -548,13 +593,13 @@ public class StudentDashboardUI extends JFrame {
 
         try (Connection conn = DBConnection.getConnection()) {
             if (conn != null) {
-                String sqlDiem = "SELECT tong_diem FROM Ket_qua_thi WHERE ma_sinh_vien = ? ORDER BY ma_bai_lam DESC LIMIT 1";
+                String sqlDiem = "SELECT tong_diem, tinh_trang FROM Ket_qua_thi WHERE ma_sinh_vien = ? ORDER BY LENGTH(ma_bai_lam) DESC, ma_bai_lam DESC LIMIT 1";
                 try (PreparedStatement ps = conn.prepareStatement(sqlDiem)) {
                     ps.setString(1, maSinhVien);
                     try (ResultSet rs = ps.executeQuery()) {
                         if (rs.next()) {
                             tongDiemThi = rs.getInt("tong_diem");
-                            tinhTrangThi = (tongDiemThi >= 80) ? "ĐẠT" : "CHƯA ĐẠT";
+                            tinhTrangThi = ketQua(rs.getString("tinh_trang")).toUpperCase();
                         }
                     }
                 }
@@ -593,8 +638,10 @@ public class StudentDashboardUI extends JFrame {
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         loadRows(model,
                 "SELECT lh.ngay_day, lh.ca_hoc, lh.phong_hoc, lh.noi_dung, lh.trang_thai_buoi FROM Lich_hoc lh "
-                        + "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien WHERE hs.ma_sinh_vien = ? LIMIT 5",
-                rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)},
+                        + "JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien "
+                        + "WHERE hs.ma_sinh_vien = ? ORDER BY lh.ngay_day DESC LIMIT 5",
+                rs -> new Object[]{fmt(rs.getTimestamp(1), DATE_FMT), rs.getString(2), rs.getString(3),
+                        rs.getString(4), buoi(rs.getString(5))},
                 maSinhVien);
         cardSchedule.add(createScroll(createCustomTable(model, 4, -1), "Chưa có lịch học"), BorderLayout.CENTER);
 
@@ -731,8 +778,8 @@ public class StudentDashboardUI extends JFrame {
             }
 
             String maHoaDon = "HD_" + (System.currentTimeMillis() / 1000);
-            String sql = "INSERT INTO hoa_don (ma_hoa_don, ma_nhan_vien, ma_ghi_danh, khoan_thu, ngay_lap, hinh_thuc, trang_thai) "
-                    + "VALUES (?, 'NV01', ?, ?, NOW(), 'Chuyển khoản', 'Chưa nộp')";
+            String sql = "INSERT INTO hoa_don (ma_hoa_don, ma_nhan_vien, ma_ghi_danh, khoan_thu, ngay_lap, trang_thai) "
+                    + "VALUES (?, NULL, ?, ?, NOW(), 'Chưa nộp')";
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setString(1, maHoaDon);
                 ps.setString(2, maGhiDanh);
@@ -755,9 +802,9 @@ public class StudentDashboardUI extends JFrame {
         loadRows(model,
                 "SELECT lh.ma_lich_hoc, lh.id_lop, lh.ngay_day, lh.ca_hoc, lh.phong_hoc, lh.noi_dung, lh.trang_thai_buoi "
                         + "FROM Lich_hoc lh JOIN Hoc_sinh hs ON lh.id_giao_vien = hs.id_giao_vien "
-                        + "WHERE hs.ma_sinh_vien = ? ORDER BY lh.ngay_day",
-                rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), rs.getString(6), rs.getString(7)},
+                        + "WHERE hs.ma_sinh_vien = ? ORDER BY lh.ngay_day DESC",
+                rs -> new Object[]{rs.getString(1), rs.getString(2), fmt(rs.getTimestamp(3), DATE_FMT), rs.getString(4),
+                        rs.getString(5), rs.getString(6), buoi(rs.getString(7))},
                 maSinhVien);
 
         card.add(createScroll(createCustomTable(model, 6, -1), "Chưa có lịch học nào"), BorderLayout.CENTER);
@@ -770,17 +817,17 @@ public class StudentDashboardUI extends JFrame {
         JPanel panel = pagePanel();
         JLabel title = pageTitle("Kết quả bài làm & Điểm thi");
 
-        RoundedPanel card = createCard("Bảng điểm kiểm tra trình độ (≥ 80 điểm: Đạt)");
-        String[] cols = {"Mã Bài Làm", "Trình Độ", "Mã Đề Thi", "Đọc Hiểu", "Từ Vựng", "Nghe", "Tổng Điểm"};
+        RoundedPanel card = createCard("Bảng điểm kiểm tra trình độ (Đạt/Trượt tính theo tiêu chí của từng trình độ)");
+        String[] cols = {"Mã Bài Làm", "Trình Độ", "Mã Đề Thi", "Đọc Hiểu", "Từ Vựng", "Nghe", "Tổng Điểm", "Kết Quả"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         loadRows(model,
-                "SELECT ma_bai_lam, trinh_do, ma_de_thi, diem_doc_hieu, diem_tu_vung, diem_nghe, tong_diem "
+                "SELECT ma_bai_lam, trinh_do, ma_de_thi, diem_doc_hieu, diem_tu_vung, diem_nghe, tong_diem, tinh_trang "
                         + "FROM Ket_qua_thi WHERE ma_sinh_vien = ?",
                 rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3),
-                        rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7)},
+                        rs.getInt(4), rs.getInt(5), rs.getInt(6), rs.getInt(7), ketQua(rs.getString(8))},
                 maSinhVien);
 
-        card.add(createScroll(createCustomTable(model, -1, 6), "Chưa có kết quả thi nào"), BorderLayout.CENTER);
+        card.add(createScroll(createCustomTable(model, 7, -1), "Chưa có kết quả thi nào"), BorderLayout.CENTER);
         panel.add(title, BorderLayout.NORTH);
         panel.add(card, BorderLayout.CENTER);
         return panel;
@@ -791,16 +838,16 @@ public class StudentDashboardUI extends JFrame {
         JLabel title = pageTitle("Lịch sử nộp học phí");
 
         RoundedPanel card = createCard("Các hóa đơn đã được lập");
-        String[] cols = {"Mã Hóa Đơn", "Mã Ghi Danh / Khóa", "Khoản Thu", "Ngày Lập", "Hình Thức", "Trạng Thái"};
+        String[] cols = {"Mã Hóa Đơn", "Mã Ghi Danh / Khóa", "Khoản Thu", "Ngày Lập", "Trạng Thái"};
         DefaultTableModel model = new DefaultTableModel(cols, 0);
         loadRows(model,
-                "SELECT ma_hoa_don, ma_ghi_danh, khoan_thu, ngay_lap, hinh_thuc, trang_thai FROM hoa_don "
+                "SELECT ma_hoa_don, ma_ghi_danh, khoan_thu, ngay_lap, trang_thai FROM hoa_don "
                         + "WHERE ma_ghi_danh = ? OR ma_ghi_danh LIKE CONCAT(?, ':%') ORDER BY ngay_lap DESC",
-                rs -> new Object[]{rs.getString(1), rs.getString(2), vnd(rs.getLong(3)), rs.getString(4), rs.getString(5),
-                        rs.getString(6) == null ? "Chưa nộp" : rs.getString(6)},
+                rs -> new Object[]{rs.getString(1), rs.getString(2), vnd(rs.getLong(3)), fmt(rs.getTimestamp(4), DT_FMT),
+                        rs.getString(5) == null ? "Chưa nộp" : rs.getString(5)},
                 maSinhVien, maSinhVien);
 
-        card.add(createScroll(createCustomTable(model, 5, -1), "Chưa có hóa đơn nào"), BorderLayout.CENTER);
+        card.add(createScroll(createCustomTable(model, 4, -1), "Chưa có hóa đơn nào"), BorderLayout.CENTER);
         panel.add(title, BorderLayout.NORTH);
         panel.add(card, BorderLayout.CENTER);
         return panel;
@@ -858,6 +905,297 @@ public class StudentDashboardUI extends JFrame {
         p.add(lbl);
         p.add(v);
         return p;
+    }
+
+    /* ===================== ĐÁNH GIÁ GIẢNG DẠY ===================== */
+
+    private static final String[] RATING_TEXT = {"Hãy chọn số sao", "Rất không hài lòng", "Không hài lòng",
+            "Bình thường", "Hài lòng", "Rất hài lòng"};
+
+    // Các lớp thuộc giáo viên phụ trách của sinh viên (khớp cách tính bên giao diện giáo viên)
+    private static final String LOP_CUA_GV =
+            "(SELECT id_lop FROM Quanli WHERE id_giao_vien = ? UNION SELECT id_lop FROM Lich_hoc WHERE id_giao_vien = ?)";
+
+    private JPanel createDanhGiaPanel() {
+        JPanel panel = pagePanel();
+        JLabel title = pageTitle("Đánh giá giảng dạy");
+
+        // --- danh sách lớp có thể đánh giá ---
+        DefaultTableModel tmp = new DefaultTableModel(new String[]{"id", "ten"}, 0);
+        loadRows(tmp,
+                "SELECT l.id_lop, l.ten_lop, k.ten_khoa_hoc FROM Lop l JOIN Khoa_hoc k ON l.ma_khoa_hoc = k.ma_khoa_hoc "
+                        + "WHERE l.id_lop IN " + LOP_CUA_GV + " ORDER BY l.ten_lop",
+                rs -> new Object[]{rs.getString(1), rs.getString(2) + " - " + rs.getString(3)},
+                idGiaoVien, idGiaoVien);
+        List<String> lopIds = new ArrayList<>();
+        JComboBox<String> cbLop = new JComboBox<>();
+        cbLop.setFont(font(Font.PLAIN, 13));
+        for (int i = 0; i < tmp.getRowCount(); i++) {
+            lopIds.add(tmp.getValueAt(i, 0).toString());
+            cbLop.addItem(tmp.getValueAt(i, 1).toString());
+        }
+
+        // --- form gửi đánh giá ---
+        RoundedPanel formCard = createCard("Gửi đánh giá mới");
+        formCard.setPreferredSize(new Dimension(400, 0));
+
+        JPanel form = new JPanel();
+        form.setOpaque(false);
+        form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+
+        JLabel l1 = formLabel("Lớp học");
+        cbLop.setAlignmentX(Component.LEFT_ALIGNMENT);
+        cbLop.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+
+        JLabel l2 = formLabel("Mức độ hài lòng");
+        StarRatingInput starInput = new StarRatingInput();
+        starInput.setAlignmentX(Component.LEFT_ALIGNMENT);
+        JLabel lblRatingText = new JLabel(RATING_TEXT[0]);
+        lblRatingText.setFont(font(Font.BOLD, 13));
+        lblRatingText.setForeground(COLOR_TEXT_MUTED);
+        lblRatingText.setAlignmentX(Component.LEFT_ALIGNMENT);
+        starInput.setOnChange(() -> {
+            lblRatingText.setText(RATING_TEXT[starInput.getRating()]);
+            lblRatingText.setForeground(COLOR_WARNING);
+        });
+
+        JLabel l3 = formLabel("Nhận xét");
+        JTextArea txt = new JTextArea(5, 20);
+        txt.setFont(font(Font.PLAIN, 13));
+        txt.setLineWrap(true);
+        txt.setWrapStyleWord(true);
+        txt.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JScrollPane spTxt = new JScrollPane(txt);
+        spTxt.setBorder(BorderFactory.createLineBorder(COLOR_BORDER));
+        spTxt.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        PrimaryButton btnGui = new PrimaryButton("Gửi đánh giá");
+        btnGui.setAlignmentX(Component.LEFT_ALIGNMENT);
+        btnGui.setEnabled(!lopIds.isEmpty());
+        btnGui.addActionListener(e -> {
+            int idx = cbLop.getSelectedIndex();
+            if (idx < 0) return;
+            int rating = starInput.getRating();
+            if (rating < 1) {
+                JOptionPane.showMessageDialog(this, "Vui lòng chọn số sao đánh giá!", "Thông báo", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            String moTa = txt.getText().trim();
+            if (moTa.isEmpty()) moTa = "(Không có nhận xét)";
+            if (saveDanhGia(lopIds.get(idx), rating, moTa)) {
+                JOptionPane.showMessageDialog(this, "Cảm ơn bạn! Đánh giá đã được gửi và lưu vào CSDL.", "Thành công", JOptionPane.INFORMATION_MESSAGE);
+                showCard("DanhGia");
+            }
+        });
+
+        form.add(l1);
+        form.add(Box.createVerticalStrut(6));
+        form.add(cbLop);
+        form.add(Box.createVerticalStrut(16));
+        form.add(l2);
+        form.add(Box.createVerticalStrut(4));
+        form.add(starInput);
+        form.add(lblRatingText);
+        form.add(Box.createVerticalStrut(16));
+        form.add(l3);
+        form.add(Box.createVerticalStrut(6));
+        form.add(spTxt);
+        form.add(Box.createVerticalStrut(18));
+        form.add(btnGui);
+        if (lopIds.isEmpty()) {
+            JLabel warn = new JLabel("Chưa có lớp nào để đánh giá.");
+            warn.setFont(font(Font.PLAIN, 12));
+            warn.setForeground(COLOR_TEXT_MUTED);
+            warn.setAlignmentX(Component.LEFT_ALIGNMENT);
+            form.add(Box.createVerticalStrut(8));
+            form.add(warn);
+        }
+        JPanel formTop = new JPanel(new BorderLayout());
+        formTop.setOpaque(false);
+        formTop.add(form, BorderLayout.NORTH);
+        formCard.add(formTop, BorderLayout.CENTER);
+
+        // --- lịch sử đánh giá ---
+        RoundedPanel histCard = createCard("Đánh giá đã gửi");
+        DefaultTableModel model = new DefaultTableModel(new String[]{"Ngày Gửi", "Lớp", "Đánh Giá", "Nội Dung"}, 0);
+        loadRows(model,
+                "SELECT d.ngay_gui, l.ten_lop, d.rating, d.mo_ta FROM Danh_gia_va_phan_hoi d "
+                        + "JOIN Lop l ON d.id_lop = l.id_lop WHERE d.ma_sinh_vien = ? ORDER BY d.ngay_gui DESC",
+                rs -> new Object[]{fmt(rs.getTimestamp(1), DT_FMT), rs.getString(2), rs.getInt(3), rs.getString(4)},
+                maSinhVien);
+        histCard.add(createScroll(createCustomTable(model, -1, 2), "Bạn chưa gửi đánh giá nào"), BorderLayout.CENTER);
+
+        JPanel center = new JPanel(new BorderLayout(16, 0));
+        center.setOpaque(false);
+        center.add(formCard, BorderLayout.WEST);
+        center.add(histCard, BorderLayout.CENTER);
+
+        panel.add(title, BorderLayout.NORTH);
+        panel.add(center, BorderLayout.CENTER);
+        return panel;
+    }
+
+    /** Thêm đánh giá mới; nếu sinh viên đã đánh giá lớp này thì hỏi để cập nhật bản cũ. */
+    private boolean saveDanhGia(String idLop, int rating, String moTa) {
+        try (Connection conn = DBConnection.getConnection()) {
+            if (conn == null) return false;
+
+            String existing = null;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT ma_danh_gia FROM Danh_gia_va_phan_hoi WHERE ma_sinh_vien = ? AND id_lop = ? LIMIT 1")) {
+                ps.setString(1, maSinhVien);
+                ps.setString(2, idLop);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) existing = rs.getString(1);
+                }
+            }
+
+            if (existing != null) {
+                int c = JOptionPane.showConfirmDialog(this, "Bạn đã đánh giá lớp này rồi.\nCập nhật lại đánh giá cũ?",
+                        "Xác nhận", JOptionPane.YES_NO_OPTION);
+                if (c != JOptionPane.YES_OPTION) return false;
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE Danh_gia_va_phan_hoi SET rating = ?, mo_ta = ?, ngay_gui = NOW() WHERE ma_danh_gia = ?")) {
+                    ps.setInt(1, rating);
+                    ps.setString(2, moTa);
+                    ps.setString(3, existing);
+                    return ps.executeUpdate() > 0;
+                }
+            }
+
+            String ma = "DG" + (System.currentTimeMillis() / 1000);
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "INSERT INTO Danh_gia_va_phan_hoi (ma_danh_gia, ma_sinh_vien, id_lop, rating, mo_ta, ngay_gui) "
+                            + "VALUES (?, ?, ?, ?, ?, NOW())")) {
+                ps.setString(1, ma);
+                ps.setString(2, maSinhVien);
+                ps.setString(3, idLop);
+                ps.setInt(4, rating);
+                ps.setString(5, moTa);
+                return ps.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            showError("Lỗi lưu đánh giá:", e);
+            return false;
+        }
+    }
+
+    private static JLabel formLabel(String text) {
+        JLabel l = new JLabel(text);
+        l.setFont(font(Font.BOLD, 13));
+        l.setForeground(COLOR_TEXT_MAIN);
+        l.setAlignmentX(Component.LEFT_ALIGNMENT);
+        return l;
+    }
+
+    /** Ngôi sao vẽ bằng đồ họa (không phụ thuộc font). */
+    private static Path2D starShape(double cx, double cy, double rOuter) {
+        Path2D st = new Path2D.Double();
+        for (int i = 0; i < 10; i++) {
+            double r = (i % 2 == 0) ? rOuter : rOuter * 0.45;
+            double a = -Math.PI / 2 + i * Math.PI / 5;
+            double px = cx + r * Math.cos(a), py = cy + r * Math.sin(a);
+            if (i == 0) st.moveTo(px, py); else st.lineTo(px, py);
+        }
+        st.closePath();
+        return st;
+    }
+
+    /** Ô chọn số sao: rê chuột để xem trước, bấm để chọn. */
+    private static class StarRatingInput extends JComponent {
+        private static final int CELL = 36;
+        private int rating, hover;
+        private Runnable onChange;
+
+        StarRatingInput() {
+            Dimension d = new Dimension(5 * CELL, 40);
+            setPreferredSize(d);
+            setMaximumSize(d);
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
+            MouseAdapter ma = new MouseAdapter() {
+                @Override
+                public void mouseMoved(MouseEvent e) {
+                    hover = indexAt(e.getX());
+                    repaint();
+                }
+
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    hover = 0;
+                    repaint();
+                }
+
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    int i = indexAt(e.getX());
+                    if (i > 0) {
+                        rating = i;
+                        if (onChange != null) onChange.run();
+                        repaint();
+                    }
+                }
+            };
+            addMouseListener(ma);
+            addMouseMotionListener(ma);
+        }
+
+        private int indexAt(int x) {
+            int i = x / CELL + 1;
+            return (x >= 0 && i <= 5) ? i : 0;
+        }
+
+        int getRating() {
+            return rating;
+        }
+
+        void setOnChange(Runnable r) {
+            this.onChange = r;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            int shown = hover > 0 ? hover : rating;
+            for (int i = 0; i < 5; i++) {
+                Path2D star = starShape(CELL / 2.0 + i * CELL, getHeight() / 2.0, 14);
+                g2.setColor(i < shown ? COLOR_WARNING : new Color(203, 213, 225));
+                g2.fill(star);
+            }
+            g2.dispose();
+        }
+    }
+
+    /** Hiển thị số sao trong bảng. */
+    private static class StarRenderer extends JComponent implements TableCellRenderer {
+        private int rating;
+        private Color bg = Color.WHITE;
+
+        @Override
+        public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean focus, int row, int col) {
+            try {
+                rating = Integer.parseInt(String.valueOf(v).trim());
+            } catch (NumberFormatException e) {
+                rating = 0;
+            }
+            bg = sel ? COLOR_SELECT : (row % 2 == 0 ? Color.WHITE : COLOR_STRIPE);
+            setToolTipText(rating + " / 5 sao");
+            return this;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(bg);
+            g2.fillRect(0, 0, getWidth(), getHeight());
+            for (int i = 0; i < 5; i++) {
+                Path2D star = starShape(12 + 9 + i * 22, getHeight() / 2.0, 9);
+                g2.setColor(i < rating ? COLOR_WARNING : new Color(203, 213, 225));
+                g2.fill(star);
+            }
+            g2.dispose();
+        }
     }
 
     /* ===================== COMPONENT FACTORIES ===================== */
@@ -936,6 +1274,7 @@ public class StudentDashboardUI extends JFrame {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_ALL_COLUMNS);
         table.setAutoCreateRowSorter(true);
         table.setDefaultRenderer(Object.class, new CellRenderer(statusCol, scoreCol));
+        if (scoreCol >= 0) table.getColumnModel().getColumn(scoreCol).setCellRenderer(new StarRenderer()); // cột sao
 
         JTableHeader header = table.getTableHeader();
         header.setReorderingAllowed(false);
@@ -965,8 +1304,8 @@ public class StudentDashboardUI extends JFrame {
             if (col == statusCol && !s.isEmpty()) {
                 String low = s.toLowerCase();
                 Color c;
-                if (low.contains("hủy") || low.contains("nghỉ") || low.contains("huỷ") || low.contains("chưa nộp")) c = COLOR_DANGER;
-                else if (low.contains("hoàn") || low.contains("đã") || low.contains("xong")) c = COLOR_SUCCESS_DARK;
+                if (low.contains("hủy") || low.contains("nghỉ") || low.contains("huỷ") || low.contains("chưa") || low.contains("trượt")) c = COLOR_DANGER;
+                else if (low.contains("hoàn") || low.contains("đã") || low.contains("xong") || low.contains("đạt") || low.contains("dạy")) c = COLOR_SUCCESS_DARK;
                 else c = COLOR_PRIMARY;
                 setFont(font(Font.BOLD, 12));
                 setForeground(c);
