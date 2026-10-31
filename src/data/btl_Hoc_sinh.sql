@@ -1,0 +1,66 @@
+-- MySQL dump 10.13  Distrib 8.0.46, for macos15 (x86_64)
+--
+-- Host: localhost    Database: btl
+-- ------------------------------------------------------
+-- Server version	9.7.1
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+
+--
+-- GTID state at the beginning of the backup 
+--
+
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '1975bde0-b6f1-11f1-b8f7-d409ac4452cb:1-181';
+
+--
+-- Table structure for table `Hoc_sinh`
+--
+
+DROP TABLE IF EXISTS `Hoc_sinh`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `Hoc_sinh` (
+  `ma_sinh_vien` varchar(50) NOT NULL,
+  `id_giao_vien` varchar(50) NOT NULL,
+  `ho_ten` varchar(50) NOT NULL,
+  `ngay_sinh` timestamp NOT NULL,
+  `trinh_do` varchar(50) NOT NULL DEFAULT 'khong biet',
+  `so_dien_thoai` varchar(50) NOT NULL,
+  PRIMARY KEY (`ma_sinh_vien`),
+  KEY `id_giao_vien` (`id_giao_vien`),
+  CONSTRAINT `hoc_sinh_ibfk_1` FOREIGN KEY (`id_giao_vien`) REFERENCES `Giao_vien` (`id_giao_vien`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `Hoc_sinh`
+--
+
+LOCK TABLES `Hoc_sinh` WRITE;
+/*!40000 ALTER TABLE `Hoc_sinh` DISABLE KEYS */;
+INSERT INTO `Hoc_sinh` VALUES ('HS01','GV01','Nguyen Van A','2005-01-09 17:00:00','N5','0981000001'),('HS02','GV02','Tran Thi B','2004-02-14 17:00:00','N4','0981000002'),('HS03','GV03','Le Van C','2003-03-19 17:00:00','N3','0981000003'),('HS04','GV04','Pham Thi D','2005-04-24 17:00:00','N2','0981000004'),('HS05','GV05','Hoang Van E','2002-05-09 17:00:00','N1','0981000005'),('HS06','GV06','Do Thi F','2004-06-14 17:00:00','N5','0981000006'),('HS07','GV07','Bui Van G','2003-07-19 17:00:00','N4','0981000007'),('HS08','GV08','Vu Thi H','2005-08-24 17:00:00','N3','0981000008'),('HS09','GV09','Dang Van I','2002-09-09 17:00:00','N2','0981000009'),('HS10','GV10','Ngo Thi K','2004-10-14 17:00:00','N1','0981000010'),('HS11','GV11','Mai Van L','2003-11-19 17:00:00','N5','0981000011'),('HS12','GV12','Trinh Thi M','2005-12-24 17:00:00','N4','0981000012'),('HS13','GV13','Nguyen Van N','2002-01-14 17:00:00','N3','0981000013'),('HS14','GV14','Tran Thi O','2004-02-19 17:00:00','N2','0981000014'),('HS15','GV15','Le Van P','2003-03-24 17:00:00','N1','0981000015'),('HS16','GV16','Pham Thi Q','2005-04-09 17:00:00','N5','0981000016'),('HS17','GV17','Hoang Van R','2002-05-14 17:00:00','N4','0981000017'),('HS18','GV18','Do Thi S','2004-06-19 17:00:00','N3','0981000018'),('HS19','GV19','Bui Van T','2003-07-24 17:00:00','N2','0981000019'),('HS20','GV20','Vu Thi U','2005-08-09 17:00:00','N1','0981000020'),('SV01','GV01','Nguyễn Văn An','2003-03-11 17:00:00','N5','0912000001'),('SV02','GV02','Trần Thị Bình','2002-07-24 17:00:00','N5','0912000002'),('SV03','GV03','Lê Hoàng Cường','2001-11-01 17:00:00','N4','0912000003'),('SV04','GV04','Phạm Thị Dung','2000-05-17 17:00:00','N3','0912000004'),('SV05','GV05','Hoàng Văn Em','1999-09-29 17:00:00','N2','0912000005'),('SV06','GV01','Đặng Thu Giang','2004-01-07 17:00:00','N1','0912000006'),('SV07','GV02','Bùi Minh Hải','2003-12-20 17:00:00','N5','0912000007'),('SV08','GV03','Vũ Thị Hương','2002-04-13 17:00:00','N4','0912000008');
+/*!40000 ALTER TABLE `Hoc_sinh` ENABLE KEYS */;
+UNLOCK TABLES;
+SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-10-31 10:08:56

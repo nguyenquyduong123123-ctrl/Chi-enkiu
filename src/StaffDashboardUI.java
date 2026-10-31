@@ -143,7 +143,19 @@ public class StaffDashboardUI extends JFrame {
     static String nz(String s) {
         return s == null ? "" : s.trim();
     }
-
+    
+static String payMethod(String s) {
+        String t = nz(s);
+        String k = java.text.Normalizer.normalize(t, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "").replace('đ', 'd').replace('Đ', 'D').toLowerCase(Locale.ROOT);
+        switch (k) {
+            case "tien mat": return "Tiền mặt";
+            case "chuyen khoan": return "Chuyển khoản";
+            case "the": return "Thẻ";
+            case "": case "da nop": case "chua nop": return "—";
+            default: return t;
+        }
+    }
     static String vnd(long n) {
         return String.format(Locale.US, "%,d", n).replace(',', '.') + " ₫";
     }
@@ -2070,11 +2082,10 @@ public class StaffDashboardUI extends JFrame {
 
     private JComponent createInvoicePage() {
         DataGrid g = new DataGrid(new String[]{"Mã Hóa Đơn", "Học Sinh", "Khóa Học", "Khoản Thu", "Ngày Lập",
-                "Hình Thức", "Ngày Nộp", "Trạng Thái"}, "Chưa có hóa đơn nào", cols(5, 7), false);
+        		"Hình Thức", "Ngày Nộp", "Trạng Thái"}, "Chưa có hóa đơn nào", cols(7), false);
         g.load(INVOICE_SELECT + " ORDER BY h.ngay_lap DESC",
                 rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), new Money(rs.getLong(4)),
-                        when(rs, 5, true), nz(rs.getString(6)), when(rs, 7, true), rs.getString(8)});
-
+                		when(rs, 5, true), payMethod(rs.getString(6)), when(rs, 7, true), rs.getString(8)});
         FlatButton btnPaid = new FlatButton("Xác nhận đã nộp", "check", GREEN, false);
         FlatButton btnUndo = new FlatButton("Hoàn tác (chưa nộp)", "undo", AMBER, true);
         if (!canRevert()) btnUndo.setToolTipText("Chỉ Kế toán / Quản lý được hoàn tác thanh toán");
@@ -2281,12 +2292,27 @@ public class StaffDashboardUI extends JFrame {
         card.add(g, BorderLayout.CENTER);
         return pad(card);
     }
+    /** Mã lớp kế tiếp: L01, L02, ... */
+    private static String nextClassId() throws SQLException {
+        long n = Db.scalar("SELECT COALESCE(MAX(CAST(SUBSTRING(id_lop, 2) AS UNSIGNED)), 0) "
+                + "FROM Lop WHERE id_lop REGEXP '^L[0-9]+$'");
+        return String.format("L%02d", n + 1);
+    }
+
+    /** Niên khóa theo ngày hiện tại (năm học bắt đầu từ tháng 9) */
+    private static String currentSchoolYear() {
+        LocalDate d = LocalDate.now();
+        int y = d.getMonthValue() >= 9 ? d.getYear() : d.getYear() - 1;
+        return y + "-" + (y + 1);
+    }
+
     private void addClass(DataGrid g) {
         if (!valid) { toast("Bạn không có quyền thêm lớp.", T_ERR); return; }
         List<Object[]> kh, nv;
         try {
-            kh = Db.query("SELECT ma_khoa_hoc, ten_khoa_hoc FROM Khoa_hoc ORDER BY ma_khoa_hoc",
-                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2))});
+            kh = Db.query("SELECT ma_khoa_hoc, ten_khoa_hoc, trinh_do, chuyen_de FROM Khoa_hoc "
+                            + "ORDER BY trinh_do DESC, ma_khoa_hoc",
+                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2)), nz(rs.getString(3)), nz(rs.getString(4))});
             nv = Db.query("SELECT ma_nhan_vien, ho_ten FROM Nhan_vien ORDER BY ma_nhan_vien",
                     rs -> new Object[]{rs.getString(1), nz(rs.getString(2))});
         } catch (SQLException e) { toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR); return; }
@@ -2296,28 +2322,53 @@ public class StaffDashboardUI extends JFrame {
         for (int i = 0; i < khItems.length; i++) khItems[i] = kh.get(i)[0] + " - " + kh.get(i)[1];
         for (int i = 0; i < nvItems.length; i++) nvItems[i] = nv.get(i)[0] + " - " + nv.get(i)[1];
 
-        StyledField tfId = new StyledField("").withPlaceholder("VD: L05", null);
-        StyledField tfName = new StyledField("").withPlaceholder("VD: N5 - Sáng thứ 2-4-6", null);
+        final String year = currentSchoolYear();
+        StyledField tfId = new StyledField("");
+        StyledField tfName = new StyledField("");
+        StyledField tfYear = new StyledField(year);
+        for (StyledField f : new StyledField[]{tfId, tfName, tfYear}) {
+            f.setEditable(false);
+            f.setForeground(ACCENT_D);
+            f.setFocusable(false);
+        }
         RoundCombo cbKh = new RoundCombo(khItems);
-        StyledField tfYear = new StyledField("").withPlaceholder("VD: 2026-2027", null);
         RoundCombo cbNv = new RoundCombo(nvItems);
         for (int i = 0; i < nv.size(); i++) if (nv.get(i)[0].equals(maNhanVien)) cbNv.setSelectedIndex(i);
 
-        JPanel form = vform(new String[]{"Mã lớp", "Tên lớp", "Khóa học", "Niên khóa", "Nhân viên phụ trách"},
-                new JComponent[]{tfId, tfName, cbKh, tfYear, cbNv});
-
-        boolean ok = dialog("Thêm lớp học", "Sĩ số bắt đầu từ 0, thêm học sinh sau", form, "Tạo lớp", ACCENT, () -> {
-            String id = tfId.getText().trim(), name = tfName.getText().trim(), year = tfYear.getText().trim();
-            if (id.isEmpty() || name.isEmpty() || year.isEmpty()) return "Hãy nhập đủ mã lớp, tên lớp và niên khóa.";
+        // Tự sinh mã lớp + tên lớp theo khóa học đang chọn
+        Runnable refresh = () -> {
             try {
-                if (Db.scalar("SELECT COUNT(*) FROM Lop WHERE id_lop = ?", id) > 0) return "Mã lớp " + id + " đã tồn tại.";
+                tfId.setText(nextClassId());
+                Object[] k = kh.get(cbKh.getSelectedIndex());
+                long n = Db.scalar("SELECT COUNT(*) FROM Lop WHERE ma_khoa_hoc = ? AND nien_khoa = ?", k[0], year);
+                String topic = ((String) k[3]).isEmpty() ? (String) k[1] : (String) k[3];
+                tfName.setText(k[2] + " - " + topic + " - Lớp " + String.format("%02d", n + 1));
+            } catch (SQLException ex) {
+                tfName.setText("");
+            }
+        };
+        cbKh.addActionListener(e -> refresh.run());
+        refresh.run();
+
+        JPanel form = vform(new String[]{"Khóa học", "Mã lớp (tự động)", "Niên khóa (tự động)", "Tên lớp (tự động)", "Nhân viên phụ trách"},
+                new JComponent[]{cbKh, tfId, tfYear, tfName, cbNv});
+
+        String[] created = {null};
+        boolean ok = dialog("Thêm lớp học", "Mã lớp, niên khóa và tên lớp được tạo tự động theo khóa học",
+                form, "Tạo lớp", ACCENT, () -> {
+            try {
+                refresh.run();   // tính lại lúc bấm, tránh trùng khi có người khác vừa tạo lớp
+                String id = tfId.getText().trim(), name = tfName.getText().trim();
+                if (id.isEmpty() || name.isEmpty()) return "Không tạo được mã lớp, hãy thử lại.";
                 Db.update("INSERT INTO Lop (id_lop, ma_khoa_hoc, ma_nhan_vien, nien_khoa, ten_lop, si_so) VALUES (?, ?, ?, ?, ?, 0)",
                         id, kh.get(cbKh.getSelectedIndex())[0], nv.get(cbNv.getSelectedIndex())[0], year, name);
+                created[0] = id;
                 return null;
             } catch (SQLException ex) { return "Lỗi CSDL: " + rootMsg(ex); }
         }, true);
-        if (ok) { toast("Đã tạo lớp " + tfId.getText().trim() + ".", T_OK); g.reload(); }
+        if (ok && created[0] != null) { toast("Đã tạo lớp " + created[0] + ".", T_OK); g.reload(); }
     }
+        
     private void addStudentToClass(DataGrid g) {
         int r = g.selectedModelRow();
         if (r < 0) { toast("Hãy chọn một lớp trước.", T_WARN); return; }

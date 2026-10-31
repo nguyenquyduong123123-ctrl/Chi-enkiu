@@ -16,7 +16,7 @@ public class LoginForm extends JFrame {
     // ===== Tài khoản mặc định cho từng cổng =====
     private static final String DEFAULT_STAFF_ID   = "NV01";
     private static final String DEFAULT_TEACHER_ID = "GV01";
-    private static final String DEFAULT_STUDENT_ID = "HS01";
+    private static final String DEFAULT_STUDENT_ID = "SV01";
 
     // ===== Bảng màu (đồng bộ với AdminDashboard) =====
     private static final Color NAVY        = new Color(15, 23, 62);
