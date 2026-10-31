@@ -1,1 +1,0 @@
-SELECT * FROM btl.hoa_don;

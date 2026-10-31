@@ -24,28 +24,30 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '1975bde0-b6f1-11f1-b8f7-d409ac4452cb:1-181';
 
 --
--- Table structure for table `De_thi`
+-- Table structure for table `Quanli`
 --
 
-DROP TABLE IF EXISTS `De_thi`;
+DROP TABLE IF EXISTS `Quanli`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `De_thi` (
-  `ma_de_thi` varchar(50) NOT NULL,
-  `cap_do` varchar(50) NOT NULL,
-  `thoi_gian` int NOT NULL,
-  PRIMARY KEY (`ma_de_thi`)
+CREATE TABLE `Quanli` (
+  `id_lop` varchar(50) NOT NULL,
+  `id_giao_vien` varchar(50) NOT NULL,
+  PRIMARY KEY (`id_lop`,`id_giao_vien`),
+  KEY `id_giao_vien` (`id_giao_vien`),
+  CONSTRAINT `quanli_ibfk_1` FOREIGN KEY (`id_lop`) REFERENCES `Lop` (`id_lop`),
+  CONSTRAINT `quanli_ibfk_2` FOREIGN KEY (`id_giao_vien`) REFERENCES `Giao_vien` (`id_giao_vien`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping data for table `De_thi`
+-- Dumping data for table `Quanli`
 --
 
-LOCK TABLES `De_thi` WRITE;
-/*!40000 ALTER TABLE `De_thi` DISABLE KEYS */;
-INSERT INTO `De_thi` VALUES ('DT01','N5',105),('DT02','N4',125),('DT03','N3',140),('DT04','N2',155),('DT05','N1',170),('DT06','N4',125),('DT07','N4',125),('DT08','N4',125),('DT09','N3',140),('DT10','N3',140),('DT11','N3',140),('DT12','N3',140),('DT13','N2',155),('DT14','N2',155),('DT15','N2',155),('DT16','N2',155),('DT17','N1',170),('DT18','N1',170),('DT19','N1',170),('DT20','N1',170);
-/*!40000 ALTER TABLE `De_thi` ENABLE KEYS */;
+LOCK TABLES `Quanli` WRITE;
+/*!40000 ALTER TABLE `Quanli` DISABLE KEYS */;
+INSERT INTO `Quanli` VALUES ('L01','GV01'),('L06','GV01'),('L01','GV02'),('L02','GV02'),('L03','GV03'),('L04','GV04'),('L05','GV05'),('L06','GV06'),('L07','GV07'),('L08','GV08'),('L09','GV09'),('L10','GV10'),('L11','GV11'),('L12','GV12'),('L13','GV13'),('L14','GV14'),('L15','GV15'),('L16','GV16'),('L17','GV17'),('L18','GV18'),('L19','GV19'),('L20','GV20');
+/*!40000 ALTER TABLE `Quanli` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -58,4 +60,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-31 10:08:56
+-- Dump completed on 2026-10-31 10:12:48

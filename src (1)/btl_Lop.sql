@@ -24,30 +24,35 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '1975bde0-b6f1-11f1-b8f7-d409ac4452cb:1-181';
 
 --
--- Table structure for table `Quanli`
+-- Table structure for table `Lop`
 --
 
-DROP TABLE IF EXISTS `Quanli`;
+DROP TABLE IF EXISTS `Lop`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `Quanli` (
+CREATE TABLE `Lop` (
   `id_lop` varchar(50) NOT NULL,
-  `id_giao_vien` varchar(50) NOT NULL,
-  PRIMARY KEY (`id_lop`,`id_giao_vien`),
-  KEY `id_giao_vien` (`id_giao_vien`),
-  CONSTRAINT `quanli_ibfk_1` FOREIGN KEY (`id_lop`) REFERENCES `Lop` (`id_lop`),
-  CONSTRAINT `quanli_ibfk_2` FOREIGN KEY (`id_giao_vien`) REFERENCES `Giao_vien` (`id_giao_vien`)
+  `ma_khoa_hoc` varchar(50) NOT NULL,
+  `ma_nhan_vien` varchar(50) NOT NULL,
+  `nien_khoa` varchar(50) NOT NULL,
+  `ten_lop` varchar(50) NOT NULL,
+  `si_so` int DEFAULT NULL,
+  PRIMARY KEY (`id_lop`),
+  KEY `ma_khoa_hoc` (`ma_khoa_hoc`),
+  KEY `ma_nhan_vien` (`ma_nhan_vien`),
+  CONSTRAINT `lop_ibfk_1` FOREIGN KEY (`ma_khoa_hoc`) REFERENCES `Khoa_hoc` (`ma_khoa_hoc`),
+  CONSTRAINT `lop_ibfk_2` FOREIGN KEY (`ma_nhan_vien`) REFERENCES `Nhan_vien` (`ma_nhan_vien`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping data for table `Quanli`
+-- Dumping data for table `Lop`
 --
 
-LOCK TABLES `Quanli` WRITE;
-/*!40000 ALTER TABLE `Quanli` DISABLE KEYS */;
-INSERT INTO `Quanli` VALUES ('L01','GV01'),('L06','GV01'),('L01','GV02'),('L02','GV02'),('L03','GV03'),('L04','GV04'),('L05','GV05'),('L06','GV06'),('L07','GV07'),('L08','GV08'),('L09','GV09'),('L10','GV10'),('L11','GV11'),('L12','GV12'),('L13','GV13'),('L14','GV14'),('L15','GV15'),('L16','GV16'),('L17','GV17'),('L18','GV18'),('L19','GV19'),('L20','GV20');
-/*!40000 ALTER TABLE `Quanli` ENABLE KEYS */;
+LOCK TABLES `Lop` WRITE;
+/*!40000 ALTER TABLE `Lop` DISABLE KEYS */;
+INSERT INTO `Lop` VALUES ('L01','KH01','NV03','2026-2027','N5-A1',20),('L02','KH02','NV03','2026-2027','N5-A2',18),('L03','KH03','NV03','2026-2027','N4-B1',15),('L04','KH04','NV01','2026-2027','N3-C1',12),('L05','KH06','NV01','2026-2027','N2-D1',10),('L06','KH08','NV01','2026-2027','N1-E1',8),('L07','KH07','NV07','2025-2026','GT-B',12),('L08','KH08','NV08','2025-2026','LT-N5',14),('L09','KH09','NV09','2025-2026','LT-N4',10),('L10','KH10','NV10','2025-2026','TE-A',11),('L11','KH11','NV11','2025-2026','DN-A',25),('L12','KH12','NV12','2025-2026','DH-A',20),('L13','KH13','NV13','2025-2026','NP-N5',18),('L14','KH14','NV14','2025-2026','NP-N4',16),('L15','KH15','NV15','2025-2026','DH-N3',15),('L16','KH16','NV16','2025-2026','NG-N3',12),('L17','KH17','NV17','2025-2026','KJ-N2',20),('L18','KH18','NV18','2025-2026','KJ-N1',22),('L19','KH19','NV19','2025-2026','IT-JP',13),('L20','KH20','NV20','2025-2026','GT-C',24);
+/*!40000 ALTER TABLE `Lop` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -60,4 +65,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-31 10:08:56
+-- Dump completed on 2026-10-31 10:12:48

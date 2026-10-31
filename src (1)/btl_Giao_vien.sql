@@ -24,35 +24,30 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '1975bde0-b6f1-11f1-b8f7-d409ac4452cb:1-181';
 
 --
--- Table structure for table `Lop`
+-- Table structure for table `Giao_vien`
 --
 
-DROP TABLE IF EXISTS `Lop`;
+DROP TABLE IF EXISTS `Giao_vien`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `Lop` (
-  `id_lop` varchar(50) NOT NULL,
-  `ma_khoa_hoc` varchar(50) NOT NULL,
-  `ma_nhan_vien` varchar(50) NOT NULL,
-  `nien_khoa` varchar(50) NOT NULL,
-  `ten_lop` varchar(50) NOT NULL,
-  `si_so` int DEFAULT NULL,
-  PRIMARY KEY (`id_lop`),
-  KEY `ma_khoa_hoc` (`ma_khoa_hoc`),
-  KEY `ma_nhan_vien` (`ma_nhan_vien`),
-  CONSTRAINT `lop_ibfk_1` FOREIGN KEY (`ma_khoa_hoc`) REFERENCES `Khoa_hoc` (`ma_khoa_hoc`),
-  CONSTRAINT `lop_ibfk_2` FOREIGN KEY (`ma_nhan_vien`) REFERENCES `Nhan_vien` (`ma_nhan_vien`)
+CREATE TABLE `Giao_vien` (
+  `id_giao_vien` varchar(50) NOT NULL,
+  `so_dien_thoai` varchar(50) NOT NULL,
+  `chung_chi` varchar(50) NOT NULL,
+  `quoc_tich` varchar(50) NOT NULL,
+  `ho_ten` varchar(50) DEFAULT NULL,
+  PRIMARY KEY (`id_giao_vien`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping data for table `Lop`
+-- Dumping data for table `Giao_vien`
 --
 
-LOCK TABLES `Lop` WRITE;
-/*!40000 ALTER TABLE `Lop` DISABLE KEYS */;
-INSERT INTO `Lop` VALUES ('L01','KH01','NV03','2026-2027','N5-A1',20),('L02','KH02','NV03','2026-2027','N5-A2',18),('L03','KH03','NV03','2026-2027','N4-B1',15),('L04','KH04','NV01','2026-2027','N3-C1',12),('L05','KH06','NV01','2026-2027','N2-D1',10),('L06','KH08','NV01','2026-2027','N1-E1',8),('L07','KH07','NV07','2025-2026','GT-B',12),('L08','KH08','NV08','2025-2026','LT-N5',14),('L09','KH09','NV09','2025-2026','LT-N4',10),('L10','KH10','NV10','2025-2026','TE-A',11),('L11','KH11','NV11','2025-2026','DN-A',25),('L12','KH12','NV12','2025-2026','DH-A',20),('L13','KH13','NV13','2025-2026','NP-N5',18),('L14','KH14','NV14','2025-2026','NP-N4',16),('L15','KH15','NV15','2025-2026','DH-N3',15),('L16','KH16','NV16','2025-2026','NG-N3',12),('L17','KH17','NV17','2025-2026','KJ-N2',20),('L18','KH18','NV18','2025-2026','KJ-N1',22),('L19','KH19','NV19','2025-2026','IT-JP',13),('L20','KH20','NV20','2025-2026','GT-C',24);
-/*!40000 ALTER TABLE `Lop` ENABLE KEYS */;
+LOCK TABLES `Giao_vien` WRITE;
+/*!40000 ALTER TABLE `Giao_vien` DISABLE KEYS */;
+INSERT INTO `Giao_vien` VALUES ('GV01','0901000001','JLPT N1','Nhật Bản','Tanaka Hiroshi'),('GV02','0901000002','JLPT N1','Việt Nam','Nguyễn Thanh Mai'),('GV03','0901000003','JLPT N2','Việt Nam','Đỗ Quang Huy'),('GV04','0901000004','JLPT N1','Nhật Bản','Sato Yuki'),('GV05','0901000005','JLPT N2','Việt Nam','Vũ Ngọc Ánh'),('GV06','0906666666','JLPT N1','Viet Nam','Pham Van Long'),('GV07','0907777777','JLPT N2','Nhat Ban','Suzuki Ken'),('GV08','0908888888','JLPT N3','Viet Nam','Do Thi Linh'),('GV09','0909999999','JLPT N1','Nhat Ban','Tanaka Yuki'),('GV10','0910000000','JLPT N2','Viet Nam','Hoang Thi Thu'),('GV11','0911111111','JLPT N3','Viet Nam','Bui Van Tuan'),('GV12','0912222222','JLPT N1','Nhat Ban','Kobayashi Mika'),('GV13','0913333333','JLPT N2','Viet Nam','Nguyen Van Hai'),('GV14','0914444444','JLPT N3','Nhat Ban','Ito Sakura'),('GV15','0915555555','JLPT N1','Viet Nam','Tran Thi Lan'),('GV16','0916666666','JLPT N2','Viet Nam','Pham Thi Yen'),('GV17','0917777777','JLPT N1','Nhat Ban','Kato Hiroshi'),('GV18','0918888888','JLPT N3','Viet Nam','Le Van Thanh'),('GV19','0919999999','JLPT N2','Nhat Ban','Mori Akira'),('GV20','0920000000','JLPT N1','Viet Nam','Do Thi Ngoc');
+/*!40000 ALTER TABLE `Giao_vien` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -65,4 +60,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-31 10:08:56
+-- Dump completed on 2026-10-31 10:12:49
