@@ -13,6 +13,12 @@ import java.awt.*;
 import java.awt.event.*;
 import java.awt.geom.*;
 import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import java.sql.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -226,7 +232,10 @@ public class StaffDashboardUI extends JFrame {
             String[] ddl = {
                     "ALTER TABLE hoa_don ADD COLUMN trang_thai VARCHAR(20) NOT NULL DEFAULT 'Chưa nộp'",
                     "ALTER TABLE hoa_don ADD COLUMN ngay_nop TIMESTAMP NULL DEFAULT NULL",
-                    "ALTER TABLE hoa_don ADD COLUMN nv_xac_nhan VARCHAR(50) NULL DEFAULT NULL"};
+                    "ALTER TABLE hoa_don ADD COLUMN nv_xac_nhan VARCHAR(50) NULL DEFAULT NULL", "CREATE TABLE IF NOT EXISTS Hoc_sinh_lop (id_lop VARCHAR(50) NOT NULL, ma_sinh_vien VARCHAR(50) NOT NULL, "
+                            + "ngay_vao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (id_lop, ma_sinh_vien), "
+                            + "FOREIGN KEY (id_lop) REFERENCES Lop(id_lop), FOREIGN KEY (ma_sinh_vien) REFERENCES Hoc_sinh(ma_sinh_vien))"
+                    };
             try (Connection c = open(); Statement st = c.createStatement()) {
                 for (String s : ddl) {
                     try {
@@ -2139,28 +2148,233 @@ public class StaffDashboardUI extends JFrame {
     /* ============================ DANH SÁCH ============================ */
 
     private JComponent createStudentPage() {
-        return listPage("Danh sách học sinh", "Tất cả học sinh trong trung tâm",
-                new String[]{"Mã SV", "Họ Tên", "Ngày Sinh", "Trình Độ", "Số Điện Thoại", "GV Phụ Trách"},
-                "SELECT hs.ma_sinh_vien, hs.ho_ten, hs.ngay_sinh, hs.trinh_do, hs.so_dien_thoai, "
+        DataGrid g = new DataGrid(new String[]{"Mã SV", "Họ Tên", "Ngày Sinh", "Trình Độ", "Số Điện Thoại", "GV Phụ Trách"},
+                "Chưa có học sinh nào", cols(3), false);
+        g.load("SELECT hs.ma_sinh_vien, hs.ho_ten, hs.ngay_sinh, hs.trinh_do, hs.so_dien_thoai, "
                         + "COALESCE(gv.ho_ten, 'Chưa phân công') FROM Hoc_sinh hs "
                         + "LEFT JOIN Giao_vien gv ON hs.id_giao_vien = gv.id_giao_vien ORDER BY hs.ma_sinh_vien",
                 rs -> new Object[]{rs.getString(1), rs.getString(2), when(rs, 3, false),
-                        rs.getString(4), rs.getString(5), rs.getString(6)},
-                "Chưa có học sinh nào", cols(3), null, -1);
-    }
+                        rs.getString(4), rs.getString(5), rs.getString(6)});
 
+        FlatButton btnAdd = new FlatButton("Thêm học sinh", "plus", ACCENT, false);
+        btnAdd.setEnabled(valid);
+        btnAdd.addActionListener(e -> addStudent(g));
+        FlatButton btnDel = new FlatButton("Xóa học sinh", null, RED, true);
+        btnDel.setEnabled(false);
+        g.table.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) btnDel.setEnabled(valid && g.selectedModelRow() >= 0);
+        });
+        btnDel.addActionListener(e -> deleteStudent(g));
+
+        JPanel tb = toolbar(g, null, -1, "Tìm học sinh...");
+        tb.add(btnAdd);   
+        tb.add(btnDel);// toolbar() trả về JPanel nên add thêm nút được
+        Card card = new Card("Danh sách học sinh", "Tất cả học sinh trong trung tâm", tb);
+        card.add(g, BorderLayout.CENTER);
+        return pad(card);
+    }
+    private void addStudent(DataGrid g) {
+        if (!valid) { toast("Bạn không có quyền thêm học sinh.", T_ERR); return; }
+        List<Object[]> gv;
+        String nextMa;
+        try {
+            gv = Db.query("SELECT id_giao_vien, ho_ten FROM Giao_vien ORDER BY id_giao_vien",
+                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2))});
+            long n = Db.scalar("SELECT COALESCE(MAX(CAST(SUBSTRING(ma_sinh_vien, 3) AS UNSIGNED)), 0) "
+                    + "FROM Hoc_sinh WHERE ma_sinh_vien REGEXP '^SV[0-9]+$'");
+            nextMa = String.format("SV%02d", n + 1);
+        } catch (SQLException e) { toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR); return; }
+        if (gv.isEmpty()) { toast("Hãy thêm giáo viên trước (học sinh bắt buộc có GV phụ trách).", T_WARN); return; }
+
+        String[] items = new String[gv.size()];
+        for (int i = 0; i < items.length; i++) items[i] = gv.get(i)[0] + " - " + gv.get(i)[1];
+
+        StyledField tfMa = new StyledField(nextMa);
+        StyledField tfName = new StyledField("");
+        StyledField tfDob = new StyledField("").withPlaceholder("VD: 15/03/2008", null);
+        RoundCombo cbLevel = new RoundCombo(new String[]{"Chưa xác định", "N5", "N4", "N3", "N2", "N1"});
+        StyledField tfPhone = new StyledField("");
+        RoundCombo cbGv = new RoundCombo(items);
+        JPanel form = vform(
+                new String[]{"Mã sinh viên", "Họ tên", "Ngày sinh (dd/MM/yyyy)", "Trình độ", "Số điện thoại", "Giáo viên phụ trách"},
+                new JComponent[]{tfMa, tfName, tfDob, cbLevel, tfPhone, cbGv});
+
+        boolean ok = dialog("Thêm học sinh", "Nhập thông tin học sinh mới", form, "Thêm", ACCENT, () -> {
+            String ma = tfMa.getText().trim(), name = tfName.getText().trim(), phone = tfPhone.getText().trim();
+            if (ma.isEmpty() || name.isEmpty() || phone.isEmpty()) return "Hãy nhập đủ mã, họ tên và số điện thoại.";
+            if (!phone.matches("0\\d{9,10}")) return "Số điện thoại không hợp lệ (VD: 0912345678).";
+            LocalDate dob;
+            try { dob = LocalDate.parse(tfDob.getText().trim(), IN_FMT); }
+            catch (DateTimeParseException ex) { return "Ngày sinh phải đúng dạng dd/MM/yyyy."; }
+            if (dob.isAfter(LocalDate.now()) || dob.getYear() < 1970) return "Ngày sinh không hợp lệ.";
+            try {
+                if (Db.scalar("SELECT COUNT(*) FROM Hoc_sinh WHERE ma_sinh_vien = ?", ma) > 0)
+                    return "Mã " + ma + " đã tồn tại.";
+                Db.update("INSERT INTO Hoc_sinh (ma_sinh_vien, id_giao_vien, ho_ten, ngay_sinh, trinh_do, so_dien_thoai) "
+                                + "VALUES (?, ?, ?, ?, ?, ?)",
+                        ma, gv.get(cbGv.getSelectedIndex())[0], name,
+                        Timestamp.valueOf(dob.atStartOfDay()), cbLevel.getSelectedItem(), phone);
+                return null;
+            } catch (SQLException ex) { return "Lỗi CSDL: " + rootMsg(ex); }
+        }, true);
+        if (ok) { toast("Đã thêm học sinh " + tfMa.getText().trim() + ".", T_OK); g.reload(); }
+    }
+    private void deleteStudent(DataGrid g) {
+        int r = g.selectedModelRow();
+        if (r < 0) { toast("Hãy chọn một học sinh trước.", T_WARN); return; }
+        if (!valid) { toast("Bạn không có quyền xóa học sinh.", T_ERR); return; }
+        String ma = String.valueOf(g.value(r, 0)), ten = String.valueOf(g.value(r, 1));
+        try {
+            long hd = Db.scalar("SELECT COUNT(*) FROM hoa_don WHERE SUBSTRING_INDEX(ma_ghi_danh, ':', 1) = ?", ma);
+            long kt = Db.scalar("SELECT COUNT(*) FROM Ket_qua_thi WHERE ma_sinh_vien = ?", ma);
+            long dg = Db.scalar("SELECT COUNT(*) FROM Danh_gia_va_phan_hoi WHERE ma_sinh_vien = ?", ma);
+            if (hd + kt + dg > 0) {
+                toast("Không xóa được: còn " + hd + " hóa đơn, " + kt + " kết quả thi, " + dg + " đánh giá.", T_ERR);
+                return;
+            }
+            if (!confirm("Xóa học sinh",
+                    "Xóa học sinh <b>" + ten + "</b> (" + ma + ")?<br><br>"
+                            + "<span style='color:#b91c1c'>Học sinh sẽ bị gỡ khỏi mọi lớp. Không thể hoàn tác.</span>",
+                    "Xóa", RED)) return;
+            List<Object[]> lops = Db.query("SELECT id_lop FROM Hoc_sinh_lop WHERE ma_sinh_vien = ?",
+                    rs -> new Object[]{rs.getString(1)}, ma);
+            Db.update("DELETE FROM Hoc_sinh_lop WHERE ma_sinh_vien = ?", ma);
+            Db.update("DELETE FROM Hoc_sinh WHERE ma_sinh_vien = ?", ma);
+            for (Object[] l : lops)
+                Db.update("UPDATE Lop SET si_so = (SELECT COUNT(*) FROM Hoc_sinh_lop WHERE id_lop = ?) WHERE id_lop = ?",
+                        l[0], l[0]);
+            toast("Đã xóa học sinh " + ma + ".", T_OK);
+            g.reload();
+        } catch (SQLException e) {
+            toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR);
+        }
+    }
     private JComponent createClassPage() {
-        return listPage("Danh sách lớp học", "Các lớp và nhân viên phụ trách",
-                new String[]{"Mã Lớp", "Tên Lớp", "Khóa Học", "Trình Độ", "Niên Khóa", "Sĩ Số", "NV Phụ Trách"},
-                "SELECT l.id_lop, l.ten_lop, k.ten_khoa_hoc, k.trinh_do, l.nien_khoa, l.si_so, "
+        DataGrid g = new DataGrid(new String[]{"Mã Lớp", "Tên Lớp", "Khóa Học", "Trình Độ", "Niên Khóa", "Sĩ Số", "NV Phụ Trách"},
+                "Chưa có lớp học nào", cols(3), false);
+        g.load("SELECT l.id_lop, l.ten_lop, k.ten_khoa_hoc, k.trinh_do, l.nien_khoa, l.si_so, "
                         + "COALESCE(nv.ho_ten, l.ma_nhan_vien) FROM Lop l "
                         + "LEFT JOIN Khoa_hoc k ON l.ma_khoa_hoc = k.ma_khoa_hoc "
                         + "LEFT JOIN Nhan_vien nv ON l.ma_nhan_vien = nv.ma_nhan_vien ORDER BY l.id_lop",
                 rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), intObj(rs, 6), rs.getString(7)},
-                "Chưa có lớp học nào", cols(3), null, -1);
-    }
+                        rs.getString(5), intObj(rs, 6), rs.getString(7)});
 
+        FlatButton btnAdd = new FlatButton("Thêm lớp", "plus", ACCENT, false);
+        FlatButton btnAddStu = new FlatButton("Thêm học sinh vào lớp", "group", GREEN, true);
+        btnAdd.setEnabled(valid);
+        btnAddStu.setEnabled(false);
+        g.table.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) btnAddStu.setEnabled(valid && g.selectedModelRow() >= 0);
+        });
+        btnAdd.addActionListener(e -> addClass(g));
+        btnAddStu.addActionListener(e -> addStudentToClass(g));
+        FlatButton btnDel = new FlatButton("Xóa lớp", null, RED, true);
+        btnDel.setEnabled(false);
+        g.table.getSelectionModel().addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) btnDel.setEnabled(valid && g.selectedModelRow() >= 0);
+        });
+        btnDel.addActionListener(e -> deleteClass(g));
+        JPanel tb = toolbar(g, null, -1, "Tìm lớp...");
+        tb.add(btnAddStu);
+        tb.add(btnAdd);tb.add(btnDel);
+        Card card = new Card("Danh sách lớp học", "Chọn một lớp rồi bấm \"Thêm học sinh vào lớp\"", tb);
+        card.add(g, BorderLayout.CENTER);
+        return pad(card);
+    }
+    private void addClass(DataGrid g) {
+        if (!valid) { toast("Bạn không có quyền thêm lớp.", T_ERR); return; }
+        List<Object[]> kh, nv;
+        try {
+            kh = Db.query("SELECT ma_khoa_hoc, ten_khoa_hoc FROM Khoa_hoc ORDER BY ma_khoa_hoc",
+                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2))});
+            nv = Db.query("SELECT ma_nhan_vien, ho_ten FROM Nhan_vien ORDER BY ma_nhan_vien",
+                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2))});
+        } catch (SQLException e) { toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR); return; }
+        if (kh.isEmpty()) { toast("Chưa có khóa học nào để mở lớp.", T_WARN); return; }
+
+        String[] khItems = new String[kh.size()], nvItems = new String[nv.size()];
+        for (int i = 0; i < khItems.length; i++) khItems[i] = kh.get(i)[0] + " - " + kh.get(i)[1];
+        for (int i = 0; i < nvItems.length; i++) nvItems[i] = nv.get(i)[0] + " - " + nv.get(i)[1];
+
+        StyledField tfId = new StyledField("").withPlaceholder("VD: L05", null);
+        StyledField tfName = new StyledField("").withPlaceholder("VD: N5 - Sáng thứ 2-4-6", null);
+        RoundCombo cbKh = new RoundCombo(khItems);
+        StyledField tfYear = new StyledField("").withPlaceholder("VD: 2026-2027", null);
+        RoundCombo cbNv = new RoundCombo(nvItems);
+        for (int i = 0; i < nv.size(); i++) if (nv.get(i)[0].equals(maNhanVien)) cbNv.setSelectedIndex(i);
+
+        JPanel form = vform(new String[]{"Mã lớp", "Tên lớp", "Khóa học", "Niên khóa", "Nhân viên phụ trách"},
+                new JComponent[]{tfId, tfName, cbKh, tfYear, cbNv});
+
+        boolean ok = dialog("Thêm lớp học", "Sĩ số bắt đầu từ 0, thêm học sinh sau", form, "Tạo lớp", ACCENT, () -> {
+            String id = tfId.getText().trim(), name = tfName.getText().trim(), year = tfYear.getText().trim();
+            if (id.isEmpty() || name.isEmpty() || year.isEmpty()) return "Hãy nhập đủ mã lớp, tên lớp và niên khóa.";
+            try {
+                if (Db.scalar("SELECT COUNT(*) FROM Lop WHERE id_lop = ?", id) > 0) return "Mã lớp " + id + " đã tồn tại.";
+                Db.update("INSERT INTO Lop (id_lop, ma_khoa_hoc, ma_nhan_vien, nien_khoa, ten_lop, si_so) VALUES (?, ?, ?, ?, ?, 0)",
+                        id, kh.get(cbKh.getSelectedIndex())[0], nv.get(cbNv.getSelectedIndex())[0], year, name);
+                return null;
+            } catch (SQLException ex) { return "Lỗi CSDL: " + rootMsg(ex); }
+        }, true);
+        if (ok) { toast("Đã tạo lớp " + tfId.getText().trim() + ".", T_OK); g.reload(); }
+    }
+    private void addStudentToClass(DataGrid g) {
+        int r = g.selectedModelRow();
+        if (r < 0) { toast("Hãy chọn một lớp trước.", T_WARN); return; }
+        String idLop = String.valueOf(g.value(r, 0)), tenLop = String.valueOf(g.value(r, 1));
+        List<Object[]> hs;
+        try {
+            hs = Db.query("SELECT ma_sinh_vien, ho_ten FROM Hoc_sinh WHERE ma_sinh_vien NOT IN "
+                            + "(SELECT ma_sinh_vien FROM Hoc_sinh_lop WHERE id_lop = ?) ORDER BY ma_sinh_vien",
+                    rs -> new Object[]{rs.getString(1), nz(rs.getString(2))}, idLop);
+        } catch (SQLException e) { toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR); return; }
+        if (hs.isEmpty()) { toast("Không còn học sinh nào để thêm vào lớp này.", T_INFO); return; }
+
+        String[] items = new String[hs.size()];
+        for (int i = 0; i < items.length; i++) items[i] = hs.get(i)[0] + " - " + hs.get(i)[1];
+        RoundCombo cb = new RoundCombo(items);
+        JPanel form = vform(new String[]{"Chọn học sinh"}, new JComponent[]{cb});
+
+        boolean ok = dialog("Thêm học sinh vào lớp", tenLop + " (" + idLop + ")", form, "Thêm vào lớp", GREEN, () -> {
+            String ma = String.valueOf(hs.get(cb.getSelectedIndex())[0]);
+            try {
+                Db.update("INSERT INTO Hoc_sinh_lop (id_lop, ma_sinh_vien) VALUES (?, ?)", idLop, ma);
+                Db.update("UPDATE Lop SET si_so = (SELECT COUNT(*) FROM Hoc_sinh_lop WHERE id_lop = ?) WHERE id_lop = ?",
+                        idLop, idLop);
+                return null;
+            } catch (SQLException ex) {
+                return ex.getErrorCode() == 1062 ? "Học sinh này đã ở trong lớp rồi." : "Lỗi CSDL: " + rootMsg(ex);
+            }
+        }, true);
+        if (ok) { toast("Đã thêm học sinh vào lớp " + idLop + ".", T_OK); g.reload(); }
+    }
+    private void deleteClass(DataGrid g) {
+        int r = g.selectedModelRow();
+        if (r < 0) { toast("Hãy chọn một lớp trước.", T_WARN); return; }
+        if (!valid) { toast("Bạn không có quyền xóa lớp.", T_ERR); return; }
+        String id = String.valueOf(g.value(r, 0)), ten = String.valueOf(g.value(r, 1));
+        try {
+            long lh = Db.scalar("SELECT COUNT(*) FROM Lich_hoc WHERE id_lop = ?", id);
+            long dg = Db.scalar("SELECT COUNT(*) FROM Danh_gia_va_phan_hoi WHERE id_lop = ?", id);
+            long ql = Db.scalar("SELECT COUNT(*) FROM Quanli WHERE id_lop = ?", id);
+            if (lh + dg + ql > 0) {
+                toast("Không xóa được: còn " + lh + " buổi học, " + dg + " đánh giá, " + ql + " phân công GV.", T_ERR);
+                return;
+            }
+            long hs = Db.scalar("SELECT COUNT(*) FROM Hoc_sinh_lop WHERE id_lop = ?", id);
+            if (!confirm("Xóa lớp học",
+                    "Xóa lớp <b>" + ten + "</b> (" + id + ")?<br><br>"
+                            + (hs > 0 ? "Có <b>" + hs + "</b> học sinh sẽ bị gỡ khỏi lớp (học sinh vẫn còn trong hệ thống).<br><br>" : "")
+                            + "<span style='color:#b91c1c'>Không thể hoàn tác.</span>",
+                    "Xóa lớp", RED)) return;
+            Db.update("DELETE FROM Hoc_sinh_lop WHERE id_lop = ?", id);
+            Db.update("DELETE FROM Lop WHERE id_lop = ?", id);
+            toast("Đã xóa lớp " + id + ".", T_OK);
+            g.reload();
+        } catch (SQLException e) {
+            toast("Lỗi cơ sở dữ liệu: " + rootMsg(e), T_ERR);
+        }
+    }
     private JComponent createCoursePage() {
         return listPage("Danh sách khóa học", "Chương trình đào tạo và học phí",
                 new String[]{"Mã Khóa", "Tên Khóa Học", "Trình Độ", "Chuyên Đề", "Giáo Trình", "Học Phí", "Số Lớp"},
@@ -2356,6 +2570,20 @@ public class StaffDashboardUI extends JFrame {
     }
 
     /* ============================ HỒ SƠ ============================ */
+    private static JPanel vform(String[] labels, JComponent[] fields) {
+        JPanel p = new JPanel(new GridBagLayout());
+        p.setOpaque(false);
+        GridBagConstraints c = new GridBagConstraints();
+        c.fill = GridBagConstraints.HORIZONTAL; c.weightx = 1; c.gridx = 0;
+        int y = 0;
+        for (int i = 0; i < labels.length; i++) {
+            c.gridy = y++; c.insets = new Insets(0, 0, 4, 0);
+            p.add(lbl(labels[i], font(Font.BOLD, 12), MUTED), c);
+            c.gridy = y++; c.insets = new Insets(0, 0, 12, 0);
+            p.add(fields[i], c);
+        }
+        return p;
+    }
 
     private static long q(String sql, Object... p) {
         try { return Db.scalar(sql, p); } catch (SQLException e) { return 0; }
@@ -2433,6 +2661,252 @@ public class StaffDashboardUI extends JFrame {
     }
 
     /* ============================ MAIN ============================ */
+    /* ============================ BÁO CÁO TÀI CHÍNH (EXCEL) ============================ */
+
+    /** Ghi file .xlsx thuần Java (không cần thư viện ngoài) */
+    static final class Xlsx {
+        static final class Sheet {
+            final String name;
+            final List<Object[]> rows = new ArrayList<>();
+            final List<Boolean> bold = new ArrayList<>();
+            Sheet(String name) { this.name = name; }
+            Sheet row(boolean b, Object... cells) { rows.add(cells); bold.add(b); return this; }
+        }
+
+        private static final String H = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
+        private final List<Sheet> sheets = new ArrayList<>();
+
+        Sheet sheet(String name) { Sheet s = new Sheet(name); sheets.add(s); return s; }
+
+        private static String esc(String s) {
+            StringBuilder b = new StringBuilder();
+            for (char c : s.toCharArray()) {
+                if (c == '&') b.append("&amp;");
+                else if (c == '<') b.append("&lt;");
+                else if (c == '>') b.append("&gt;");
+                else if (c == '"') b.append("&quot;");
+                else if (c >= 0x20 || c == '\n' || c == '\t') b.append(c);
+            }
+            return b.toString();
+        }
+
+        private static String colName(int i) {
+            String s = "";
+            for (i++; i > 0; i = (i - 1) / 26) s = (char) ('A' + (i - 1) % 26) + s;
+            return s;
+        }
+
+        private static void put(ZipOutputStream z, String name, String content) throws IOException {
+            z.putNextEntry(new ZipEntry(name));
+            z.write(content.getBytes(StandardCharsets.UTF_8));
+            z.closeEntry();
+        }
+
+        private String sheetXml(Sheet sh) {
+            int ncol = 0;
+            for (Object[] r : sh.rows) ncol = Math.max(ncol, r.length);
+            double[] w = new double[ncol];
+            for (Object[] r : sh.rows) {
+                if (r.length <= 1) continue;
+                for (int c = 0; c < r.length; c++) {
+                    Object v = r[c];
+                    if (v == null) continue;
+                    int len = v instanceof Number
+                            ? String.format(Locale.US, "%,d", ((Number) v).longValue()).length()
+                            : v.toString().length();
+                    w[c] = Math.max(w[c], len);
+                }
+            }
+            StringBuilder b = new StringBuilder(H)
+                    .append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
+            if (ncol > 0) {
+                b.append("<cols>");
+                for (int c = 0; c < ncol; c++)
+                    b.append("<col min=\"").append(c + 1).append("\" max=\"").append(c + 1)
+                            .append("\" width=\"").append(Math.min(50, Math.max(12, w[c] + 3)))
+                            .append("\" customWidth=\"1\"/>");
+                b.append("</cols>");
+            }
+            b.append("<sheetData>");
+            for (int r = 0; r < sh.rows.size(); r++) {
+                Object[] cells = sh.rows.get(r);
+                boolean bd = sh.bold.get(r);
+                b.append("<row r=\"").append(r + 1).append("\">");
+                for (int c = 0; c < cells.length; c++) {
+                    Object v = cells[c];
+                    if (v == null) continue;
+                    String ref = colName(c) + (r + 1);
+                    if (v instanceof Number) {
+                        b.append("<c r=\"").append(ref).append("\" s=\"").append(bd ? 3 : 2).append("\"><v>")
+                                .append(((Number) v).longValue()).append("</v></c>");
+                    } else {
+                        b.append("<c r=\"").append(ref).append("\" t=\"inlineStr\" s=\"").append(bd ? 1 : 0)
+                                .append("\"><is><t xml:space=\"preserve\">").append(esc(v.toString()))
+                                .append("</t></is></c>");
+                    }
+                }
+                b.append("</row>");
+            }
+            return b.append("</sheetData></worksheet>").toString();
+        }
+
+        void save(File f) throws IOException {
+            String rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+            try (ZipOutputStream z = new ZipOutputStream(new FileOutputStream(f), StandardCharsets.UTF_8)) {
+                StringBuilder ct = new StringBuilder(H)
+                        .append("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">")
+                        .append("<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>")
+                        .append("<Default Extension=\"xml\" ContentType=\"application/xml\"/>")
+                        .append("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>")
+                        .append("<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>");
+                StringBuilder wb = new StringBuilder(H)
+                        .append("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"")
+                        .append(rel).append("\"><sheets>");
+                StringBuilder wr = new StringBuilder(H)
+                        .append("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+                for (int i = 0; i < sheets.size(); i++) {
+                    int n = i + 1;
+                    ct.append("<Override PartName=\"/xl/worksheets/sheet").append(n)
+                            .append(".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
+                    wb.append("<sheet name=\"").append(esc(sheets.get(i).name)).append("\" sheetId=\"").append(n)
+                            .append("\" r:id=\"rId").append(n).append("\"/>");
+                    wr.append("<Relationship Id=\"rId").append(n).append("\" Type=\"").append(rel)
+                            .append("/worksheet\" Target=\"worksheets/sheet").append(n).append(".xml\"/>");
+                    put(z, "xl/worksheets/sheet" + n + ".xml", sheetXml(sheets.get(i)));
+                }
+                wr.append("<Relationship Id=\"rId").append(sheets.size() + 1).append("\" Type=\"").append(rel)
+                        .append("/styles\" Target=\"styles.xml\"/></Relationships>");
+                put(z, "[Content_Types].xml", ct.append("</Types>").toString());
+                put(z, "_rels/.rels", H + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+                        + "<Relationship Id=\"rId1\" Type=\"" + rel + "/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+                put(z, "xl/workbook.xml", wb.append("</sheets></workbook>").toString());
+                put(z, "xl/_rels/workbook.xml.rels", wr.toString());
+                put(z, "xl/styles.xml", H + "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
+                        + "<fonts count=\"2\"><font><sz val=\"11\"/><name val=\"Calibri\"/></font>"
+                        + "<font><b/><sz val=\"11\"/><name val=\"Calibri\"/></font></fonts>"
+                        + "<fills count=\"2\"><fill><patternFill patternType=\"none\"/></fill>"
+                        + "<fill><patternFill patternType=\"gray125\"/></fill></fills>"
+                        + "<borders count=\"1\"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"
+                        + "<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>"
+                        + "<cellXfs count=\"4\">"
+                        + "<xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/>"
+                        + "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
+                        + "<xf numFmtId=\"3\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/>"
+                        + "<xf numFmtId=\"3\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\" applyNumberFormat=\"1\"/>"
+                        + "</cellXfs><cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>");
+            }
+        }
+    }
+
+    private void exportReport() {
+        if (!canPayroll()) { toast("Chỉ Kế toán / Quản lý được xuất báo cáo tài chính.", T_ERR); return; }
+        LocalDate now = LocalDate.now();
+        StyledField tfFrom = new StyledField(now.withDayOfMonth(1).minusMonths(5).format(D_FMT));
+        StyledField tfTo = new StyledField(now.format(D_FMT));
+        JPanel form = vform(new String[]{"Từ ngày (dd/MM/yyyy)", "Đến ngày (dd/MM/yyyy)"},
+                new JComponent[]{tfFrom, tfTo});
+        LocalDate[] range = new LocalDate[2];
+        boolean ok = dialog("Xuất báo cáo tài chính", "Thu học phí, công nợ và chi lương giáo viên", form,
+                "Chọn nơi lưu", ACCENT, () -> {
+                    try {
+                        range[0] = LocalDate.parse(tfFrom.getText().trim(), IN_FMT);
+                        range[1] = LocalDate.parse(tfTo.getText().trim(), IN_FMT);
+                    } catch (DateTimeParseException ex) {
+                        return "Ngày phải đúng dạng dd/MM/yyyy và hợp lệ.";
+                    }
+                    if (range[1].isBefore(range[0])) return "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu.";
+                    return null;
+                }, true);
+        if (!ok) return;
+        final LocalDate from = range[0], to = range[1];
+
+        DateTimeFormatter compact = DateTimeFormatter.ofPattern("yyyyMMdd");
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new File("BaoCaoTaiChinh_" + from.format(compact) + "_" + to.format(compact) + ".xlsx"));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File chosen = fc.getSelectedFile();
+        if (!chosen.getName().toLowerCase().endsWith(".xlsx"))
+            chosen = new File(chosen.getParentFile(), chosen.getName() + ".xlsx");
+        final File out = chosen;
+        if (out.exists() && JOptionPane.showConfirmDialog(this, "File đã tồn tại. Ghi đè?", "Xác nhận",
+                JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+
+        final Timestamp t1 = Timestamp.valueOf(from.atStartOfDay());
+        final Timestamp t2 = Timestamp.valueOf(to.plusDays(1).atStartOfDay());
+        toast("Đang tạo báo cáo...", T_INFO);
+
+        async(() -> {
+            RowMapper inv = rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4),
+                    when(rs, 5, true).toString(), nz(rs.getString(6)), when(rs, 7, true).toString()};
+            List<Object[]> paid = Db.query(INVOICE_SELECT
+                    + " WHERE h.trang_thai = 'Đã nộp' AND COALESCE(h.ngay_nop, h.ngay_lap) >= ?"
+                    + " AND COALESCE(h.ngay_nop, h.ngay_lap) < ? ORDER BY COALESCE(h.ngay_nop, h.ngay_lap)", inv, t1, t2);
+            List<Object[]> unpaid = Db.query(INVOICE_SELECT
+                    + " WHERE COALESCE(h.trang_thai, 'Chưa nộp') = 'Chưa nộp' AND h.ngay_lap >= ?"
+                    + " AND h.ngay_lap < ? ORDER BY h.ngay_lap", inv, t1, t2);
+            List<Object[]> pay = Db.query("SELECT p.ma_phieu_luong, COALESCE(gv.ho_ten, p.id_giao_vien), p.tu_ngay, p.den_ngay, "
+                            + "p.ngay_tra, p.tong_luong, COALESCE(nv.ho_ten, p.ma_nhan_vien) FROM Phieu_luong p "
+                            + "LEFT JOIN Giao_vien gv ON p.id_giao_vien = gv.id_giao_vien "
+                            + "LEFT JOIN Nhan_vien nv ON p.ma_nhan_vien = nv.ma_nhan_vien "
+                            + "WHERE p.ngay_tra >= ? AND p.ngay_tra < ? ORDER BY p.ngay_tra, p.ma_phieu_luong",
+                    rs -> new Object[]{rs.getString(1), rs.getString(2), when(rs, 3, false).toString(),
+                            when(rs, 4, false).toString(), when(rs, 5, false).toString(), rs.getLong(6), rs.getString(7)},
+                    t1, t2);
+
+            Map<String, Long> mThu = new HashMap<>(), mChi = new HashMap<>();
+            for (Object[] r : Db.query("SELECT DATE_FORMAT(COALESCE(ngay_nop, ngay_lap), '%Y-%m'), SUM(khoan_thu) "
+                            + "FROM hoa_don WHERE trang_thai = 'Đã nộp' AND COALESCE(ngay_nop, ngay_lap) >= ? "
+                            + "AND COALESCE(ngay_nop, ngay_lap) < ? GROUP BY 1",
+                    rs -> new Object[]{rs.getString(1), rs.getLong(2)}, t1, t2)) mThu.put((String) r[0], (Long) r[1]);
+            for (Object[] r : Db.query("SELECT DATE_FORMAT(ngay_tra, '%Y-%m'), SUM(tong_luong) FROM Phieu_luong "
+                            + "WHERE ngay_tra >= ? AND ngay_tra < ? GROUP BY 1",
+                    rs -> new Object[]{rs.getString(1), rs.getLong(2)}, t1, t2)) mChi.put((String) r[0], (Long) r[1]);
+
+            long thu = 0, congNo = 0, chi = 0;
+            for (Object[] r : paid) thu += (Long) r[3];
+            for (Object[] r : unpaid) congNo += (Long) r[3];
+            for (Object[] r : pay) chi += (Long) r[5];
+
+            Xlsx x = new Xlsx();
+            Xlsx.Sheet s1 = x.sheet("Tổng hợp");
+            s1.row(true, "BÁO CÁO TÀI CHÍNH TRUNG TÂM S-LINK");
+            s1.row(false, "Kỳ báo cáo: " + from.format(D_FMT) + " - " + to.format(D_FMT));
+            s1.row(false, "Người lập: " + hoTen + " (" + maNhanVien + ") - xuất lúc "
+                    + LocalDateTime.now().format(DT_FMT));
+            s1.row(false);
+            s1.row(true, "CHỈ TIÊU", "SỐ TIỀN (₫)");
+            s1.row(false, "Tổng thu học phí (đã nộp)", thu);
+            s1.row(false, "Chi lương giáo viên", chi);
+            s1.row(true, "Chênh lệch (thu - chi)", thu - chi);
+            s1.row(false, "Công nợ học phí (chưa nộp, lập trong kỳ)", congNo);
+            s1.row(false);
+            s1.row(true, "THEO THÁNG");
+            s1.row(true, "Tháng", "Thu học phí (₫)", "Chi lương GV (₫)", "Chênh lệch (₫)");
+            for (YearMonth ym = YearMonth.from(from); !ym.isAfter(YearMonth.from(to)); ym = ym.plusMonths(1)) {
+                long a = mThu.getOrDefault(ym.toString(), 0L), b = mChi.getOrDefault(ym.toString(), 0L);
+                s1.row(false, String.format("%02d/%d", ym.getMonthValue(), ym.getYear()), a, b, a - b);
+            }
+            s1.row(true, "TỔNG CỘNG", thu, chi, thu - chi);
+
+            Xlsx.Sheet s2 = x.sheet("Thu học phí");
+            s2.row(true, "Mã HĐ", "Học sinh", "Khóa học", "Số tiền (₫)", "Ngày lập", "Hình thức", "Ngày nộp");
+            for (Object[] r : paid) s2.row(false, r);
+            s2.row(true, "TỔNG CỘNG", null, null, thu);
+
+            Xlsx.Sheet s3 = x.sheet("Công nợ");
+            s3.row(true, "Mã HĐ", "Học sinh", "Khóa học", "Số tiền (₫)", "Ngày lập", "Hình thức");
+            for (Object[] r : unpaid) s3.row(false, r[0], r[1], r[2], r[3], r[4], r[5]);
+            s3.row(true, "TỔNG CÔNG NỢ", null, null, congNo);
+
+            Xlsx.Sheet s4 = x.sheet("Chi lương GV");
+            s4.row(true, "Mã phiếu", "Giáo viên", "Từ ngày", "Đến ngày", "Ngày trả", "Tổng lương (₫)", "Người lập");
+            for (Object[] r : pay) s4.row(false, r);
+            s4.row(true, "TỔNG CỘNG", null, null, null, null, chi);
+
+            x.save(out);
+            return out.getName();
+        }, name -> toast("Đã xuất báo cáo: " + name, T_OK));
+    }
 
     public static void main(String[] args) {
         System.setProperty("awt.useSystemAAFontSettings", "on");
