@@ -218,10 +218,10 @@ public class AdminDashboard extends JFrame {
         admin.setForeground(TEXT);
         admin.setFont(new Font("Segoe UI", Font.PLAIN, 14));
  
-
+ 
 JButton logout = new RoundButton("Đăng xuất", 10, Color.WHITE, TEXT, BORDER);
 ((RoundButton) logout).setFixedHeight(36);
-
+ 
 logout.addActionListener(e -> {
     int answer = JOptionPane.showConfirmDialog(
             this,
@@ -229,9 +229,9 @@ logout.addActionListener(e -> {
             "Xác nhận đăng xuất",
             JOptionPane.YES_NO_OPTION
     );
-
+ 
     if (answer == JOptionPane.YES_OPTION) {
-
+ 
         // Đóng kết nối database
         try {
             if (conn != null && !conn.isClosed()) {
@@ -240,16 +240,16 @@ logout.addActionListener(e -> {
         } catch (SQLException ex) {
             ex.printStackTrace();
         }
-
+ 
         // Mở lại màn hình LoginForm
         LoginForm login = new LoginForm();
         login.setVisible(true);
-
+ 
         // Đóng AdminDashboard
         dispose();
     }
 });
-
+ 
  
         right.add(admin);
         right.add(logout);
@@ -972,20 +972,20 @@ logout.addActionListener(e -> {
  
     // ================= THÊM / SỬA / XÓA =================
     // Form nhập liệu: 2 cặp "nhãn - ô nhập" trên mỗi hàng
-
+ 
    private boolean kiemTraSoDienThoai(List<JTextField> fields) {
     // Chỉ kiểm tra bảng học sinh và giáo viên
     if (!currentTable.equalsIgnoreCase("hoc_sinh")
             && !currentTable.equalsIgnoreCase("giao_vien")) {
         return true;
     }
-
+ 
     // Tìm cột số điện thoại
     int viTriSDT = -1;
-
+ 
     for (int i = 0; i < columns.size(); i++) {
         String tenCot = columns.get(i).toLowerCase();
-
+ 
         if (tenCot.equals("sdt")
                 || tenCot.contains("so_dien_thoai")
                 || tenCot.contains("sodienthoai")) {
@@ -993,14 +993,14 @@ logout.addActionListener(e -> {
             break;
         }
     }
-
+ 
     // Nếu bảng không có cột số điện thoại thì bỏ qua
     if (viTriSDT == -1) {
         return true;
     }
-
+ 
     String sdt = fields.get(viTriSDT).getText().trim();
-
+ 
     if (!sdt.matches("0[0-9]{9}")) {
         JOptionPane.showMessageDialog(
                 this,
@@ -1008,14 +1008,14 @@ logout.addActionListener(e -> {
                 "Số điện thoại không hợp lệ",
                 JOptionPane.WARNING_MESSAGE
         );
-
+ 
         fields.get(viTriSDT).requestFocus();
         return false;
     }
-
+ 
     return true;
 }
-
+ 
     private List<JTextField> createInputFields(Object[] oldValues, boolean lockKeys) {
         List<JTextField> fields = new ArrayList<JTextField>();
  
@@ -1134,11 +1134,11 @@ logout.addActionListener(e -> {
         if (currentTable.isEmpty()) return;
  
         List<JTextField> fields = createInputFields(null, false);
-
+ 
         if (showInputDialog("Thêm bản ghi") != JOptionPane.OK_OPTION) {
             return;
         }
-
+ 
         // Kiểm tra số điện thoại trước khi lưu
         if (!kiemTraSoDienThoai(fields)) {
             return;
@@ -1190,11 +1190,11 @@ logout.addActionListener(e -> {
         for (int i = 0; i < oldValues.length; i++) oldValues[i] = table.getValueAt(row, viewIndex(i));
  
         List<JTextField> fields = createInputFields(oldValues, true);
-
+ 
         if (showInputDialog("Sửa bản ghi") != JOptionPane.OK_OPTION) {
             return;
         }
-
+ 
         // Kiểm tra số điện thoại trước khi cập nhật
         if (!kiemTraSoDienThoai(fields)) {
             return;

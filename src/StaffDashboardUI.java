@@ -1230,6 +1230,7 @@ static String payMethod(String s) {
         private final String emptyMsg;
         private String text = "", status;
         private int statusCol = -1;
+        private final Map<Integer, String> colFilters = new HashMap<>();
         private boolean loading;
         private String lastSql;
         private RowMapper lastMap;
@@ -1319,7 +1320,20 @@ static String payMethod(String s) {
             List<RowFilter<GridModel, Integer>> fs = new ArrayList<>();
             if (!text.isEmpty()) fs.add(RowFilter.regexFilter("(?i)" + Pattern.quote(text)));
             if (status != null && statusCol >= 0) fs.add(RowFilter.regexFilter("^" + Pattern.quote(status) + "$", statusCol));
+            for (Map.Entry<Integer, String> en : colFilters.entrySet())
+                fs.add(RowFilter.regexFilter("^" + Pattern.quote(en.getValue()) + "$", en.getKey()));
             sorter.setRowFilter(fs.isEmpty() ? null : RowFilter.andFilter(fs));
+        }
+
+        void setColFilter(int col, String value) {
+            if (value == null) colFilters.remove(col); else colFilters.put(col, value);
+            applyFilter();
+        }
+
+        void sortBy(int col, boolean asc) {
+            if (col < 0) { sorter.setSortKeys(null); return; }
+            sorter.setSortKeys(java.util.Collections.singletonList(
+                    new RowSorter.SortKey(col, asc ? SortOrder.ASCENDING : SortOrder.DESCENDING)));
         }
 
         int selectedModelRow() {
@@ -1967,7 +1981,11 @@ static String payMethod(String s) {
         body.add(stats, c);
 
         BarChart chart = new BarChart();
-        Card cardChart = new Card("Doanh thu 6 tháng gần nhất", "Tính theo hóa đơn đã nộp (rê chuột vào cột để xem chi tiết)", null);
+        FlatButton btnReport = new FlatButton("Xuất báo cáo", "list", GREEN, true);
+        btnReport.setEnabled(canPayroll());
+        if (!canPayroll()) btnReport.setToolTipText("Chỉ Kế toán / Quản lý được xuất báo cáo");
+        btnReport.addActionListener(e -> exportCenter("hoadon"));   // hoặc exportReport() nếu muốn báo cáo tài chính cũ
+        Card cardChart = new Card("Doanh thu 6 tháng gần nhất", "Tính theo hóa đơn đã nộp", btnReport);
         cardChart.add(chart, BorderLayout.CENTER);
         cardChart.setPreferredSize(new Dimension(100, 390));
 
@@ -2061,7 +2079,58 @@ static String payMethod(String s) {
         p.add(s);
         return p;
     }
+    /** Thanh sắp xếp + lọc theo cột, đặt phía trên bảng */
+    private JPanel sortBar(DataGrid g, String[] sortLabels, int[] sortCols, boolean[] sortAsc,
+                           String[] fLabels, int[] fCols, String[][] fValues) {
+        JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        p.setOpaque(false);
 
+        String[] sl = new String[sortLabels.length + 1];
+        sl[0] = "Mặc định";
+        System.arraycopy(sortLabels, 0, sl, 1, sortLabels.length);
+        RoundCombo cbSort = new RoundCombo(sl);
+        cbSort.setPreferredSize(new Dimension(220, 42));
+        cbSort.addActionListener(e -> {
+            int i = cbSort.getSelectedIndex();
+            if (i <= 0) g.sortBy(-1, true); else g.sortBy(sortCols[i - 1], sortAsc[i - 1]);
+        });
+        p.add(lbl("Sắp xếp:", font(Font.BOLD, 12), MUTED));
+        p.add(cbSort);
+
+        List<RoundCombo> combos = new ArrayList<>();
+        for (int k = 0; k < fLabels.length; k++) {
+            final int col = fCols[k];
+            final String[] vals = fValues[k];
+            String[] items = new String[vals.length + 1];
+            items[0] = fLabels[k] + ": Tất cả";
+            for (int i = 0; i < vals.length; i++) items[i + 1] = fLabels[k] + ": " + vals[i];
+            RoundCombo cb = new RoundCombo(items);
+            cb.setPreferredSize(new Dimension(200, 42));
+            cb.addActionListener(e -> {
+                int i = cb.getSelectedIndex();
+                g.setColFilter(col, i <= 0 ? null : vals[i - 1]);
+            });
+            combos.add(cb);
+            p.add(cb);
+        }
+
+        FlatButton clear = new FlatButton("Xóa lọc", "undo", MUTED, true);
+        clear.addActionListener(e -> {
+            cbSort.setSelectedIndex(0);
+            for (RoundCombo c : combos) c.setSelectedIndex(0);
+        });
+        p.add(clear);
+        return p;
+    }
+
+    /** Ghép thanh sắp xếp/lọc lên trên bảng */
+    private static JComponent withBar(JComponent bar, JComponent grid) {
+        JPanel mid = new JPanel(new BorderLayout(0, 12));
+        mid.setOpaque(false);
+        mid.add(bar, BorderLayout.NORTH);
+        mid.add(grid, BorderLayout.CENTER);
+        return mid;
+    }
     private JComponent listPage(String title, String subtitle, String[] cols, String sql, RowMapper map,
                                 String empty, Set<Integer> pills, String[] statuses, int statusCol) {
         DataGrid g = new DataGrid(cols, empty, pills, false);
@@ -2181,8 +2250,14 @@ static String payMethod(String s) {
         tb.add(btnAdd);   
         tb.add(btnDel);// toolbar() trả về JPanel nên add thêm nút được
         Card card = new Card("Danh sách học sinh", "Tất cả học sinh trong trung tâm", tb);
-        card.add(g, BorderLayout.CENTER);
-        return pad(card);
+        JPanel bar = sortBar(g,
+                new String[]{"Tên: A → Z", "Tên: Z → A", "Ngày sinh: lớn tuổi trước", "Ngày sinh: nhỏ tuổi trước",
+                        "Trình độ: N1 → N5", "Trình độ: N5 → N1", "Mã SV: A → Z"},
+                new int[]{1, 1, 2, 2, 3, 3, 0},
+                new boolean[]{true, false, true, false, false, true, true},
+                new String[]{"Trình độ"}, new int[]{3},
+                new String[][]{{"N5", "N4", "N3", "N2", "N1", "Chưa xác định"}});
+        card.add(withBar(bar, g), BorderLayout.CENTER);        return pad(card);
     }
     private void addStudent(DataGrid g) {
         if (!valid) { toast("Bạn không có quyền thêm học sinh.", T_ERR); return; }
@@ -2289,8 +2364,14 @@ static String payMethod(String s) {
         tb.add(btnAddStu);
         tb.add(btnAdd);tb.add(btnDel);
         Card card = new Card("Danh sách lớp học", "Chọn một lớp rồi bấm \"Thêm học sinh vào lớp\"", tb);
-        card.add(g, BorderLayout.CENTER);
-        return pad(card);
+        JPanel bar = sortBar(g,
+                new String[]{"Tên lớp: A → Z", "Sĩ số: đông → ít", "Sĩ số: ít → đông",
+                        "Trình độ: N1 → N5", "Trình độ: N5 → N1", "Niên khóa: mới nhất trước"},
+                new int[]{1, 5, 5, 3, 3, 4},
+                new boolean[]{true, false, true, false, true, false},
+                new String[]{"Trình độ", "Niên khóa"}, new int[]{3, 4},
+                new String[][]{{"N5", "N4", "N3", "N2", "N1"}, {"2025-2026", "2026-2027"}});
+        card.add(withBar(bar, g), BorderLayout.CENTER);        return pad(card);
     }
     /** Mã lớp kế tiếp: L01, L02, ... */
     private static String nextClassId() throws SQLException {
@@ -2427,14 +2508,24 @@ static String payMethod(String s) {
         }
     }
     private JComponent createCoursePage() {
-        return listPage("Danh sách khóa học", "Chương trình đào tạo và học phí",
-                new String[]{"Mã Khóa", "Tên Khóa Học", "Trình Độ", "Chuyên Đề", "Giáo Trình", "Học Phí", "Số Lớp"},
-                "SELECT k.ma_khoa_hoc, k.ten_khoa_hoc, k.trinh_do, k.chuyen_de, k.giao_trinh, k.hoc_phi, "
+        DataGrid g = new DataGrid(new String[]{"Mã Khóa", "Tên Khóa Học", "Trình Độ", "Chuyên Đề", "Giáo Trình", "Học Phí", "Số Lớp"},
+                "Chưa có khóa học nào", cols(2), false);
+        g.load("SELECT k.ma_khoa_hoc, k.ten_khoa_hoc, k.trinh_do, k.chuyen_de, k.giao_trinh, k.hoc_phi, "
                         + "(SELECT COUNT(*) FROM Lop l WHERE l.ma_khoa_hoc = k.ma_khoa_hoc) "
                         + "FROM Khoa_hoc k ORDER BY k.trinh_do DESC, k.ma_khoa_hoc",
                 rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                        rs.getString(5), new Money(rs.getLong(6)), intObj(rs, 7)},
-                "Chưa có khóa học nào", cols(2), null, -1);
+                        rs.getString(5), new Money(rs.getLong(6)), intObj(rs, 7)});
+        JPanel bar = sortBar(g,
+                new String[]{"Học phí: cao → thấp", "Học phí: thấp → cao", "Số lớp: nhiều → ít",
+                        "Tên: A → Z", "Trình độ: N1 → N5", "Trình độ: N5 → N1"},
+                new int[]{5, 5, 6, 1, 2, 2},
+                new boolean[]{false, true, false, true, true, false},
+                new String[]{"Trình độ"}, new int[]{2},
+                new String[][]{{"N5", "N4", "N3", "N2", "N1"}});
+        Card card = new Card("Danh sách khóa học", "Chương trình đào tạo và học phí",
+                toolbar(g, null, -1, "Tìm khóa học..."));
+        card.add(withBar(bar, g), BorderLayout.CENTER);
+        return pad(card);
     }
 
     private JComponent createSchedulePage() {
@@ -2495,6 +2586,11 @@ static String payMethod(String s) {
         s.setPreferredSize(new Dimension(250, 42));
         s.getDocument().addDocumentListener(doc(() -> g.setText(s.getText())));
         right.add(s);
+        FlatButton btnReport = new FlatButton("Xuất báo cáo", "list", GREEN, true);
+        btnReport.setEnabled(canPayroll());
+        btnReport.addActionListener(e -> exportCenter("phieuluong"));
+        right.add(btnReport);
+        right.add(btnNew);
         right.add(btnNew);
 
         Card card = new Card("Lịch sử phiếu lương", canPayroll() ? "Mỗi giáo viên chỉ có một phiếu cho mỗi kỳ, không được chồng kỳ"
@@ -2848,7 +2944,110 @@ static String payMethod(String s) {
             }
         }
     }
+    private void addTemplateSheets(Xlsx x, LocalDate from, LocalDate to, Timestamp t1, Timestamp t2) throws SQLException {
+        String ky = "Kỳ báo cáo: " + from.format(D_FMT) + " - " + to.format(D_FMT);
 
+        /* ---------- I. ĐÀO TẠO ---------- */
+        Map<String, Long> done = new HashMap<>();
+        for (Object[] r : Db.query(
+                "SELECT k.trinh_do, COUNT(DISTINCT hsl.ma_sinh_vien) FROM Hoc_sinh_lop hsl "
+                        + "JOIN Lop l ON l.id_lop = hsl.id_lop JOIN Khoa_hoc k ON k.ma_khoa_hoc = l.ma_khoa_hoc "
+                        + "JOIN Ket_qua_thi kq ON kq.ma_sinh_vien = hsl.ma_sinh_vien AND kq.trinh_do = k.trinh_do "
+                        + "AND kq.tinh_trang = 'ĐẠT' GROUP BY k.trinh_do",
+                rs -> new Object[]{rs.getString(1), rs.getLong(2)})) done.put((String) r[0], (Long) r[1]);
+
+        Xlsx.Sheet s1 = x.sheet("I. Đào tạo");
+        s1.row(true, "I. SỐ LỚP VÀ SỐ HỌC VIÊN THEO CẤP ĐỘ ĐÀO TẠO");
+        s1.row(false, ky);
+        s1.row(false);
+        s1.row(true, "STT", "Cấp độ đào tạo", "Số lớp", "Tổng số học viên",
+                "Đã hoàn thành chương trình", "Chưa hoàn thành chương trình");
+        long tLop = 0, tHs = 0, tDone = 0;
+        int stt = 1;
+        for (Object[] r : Db.query(
+                "SELECT k.trinh_do, COUNT(DISTINCT l.id_lop), COUNT(h.ma_sinh_vien) FROM Khoa_hoc k "
+                        + "LEFT JOIN Lop l ON l.ma_khoa_hoc = k.ma_khoa_hoc "
+                        + "LEFT JOIN Hoc_sinh_lop h ON h.id_lop = l.id_lop "
+                        + "GROUP BY k.trinh_do ORDER BY k.trinh_do DESC",
+                rs -> new Object[]{rs.getString(1), rs.getLong(2), rs.getLong(3)})) {
+            long lop = (Long) r[1], hs = (Long) r[2];
+            long dn = Math.min(hs, done.getOrDefault((String) r[0], 0L));
+            s1.row(false, stt++, "Tiếng Nhật " + r[0], lop, hs, dn, hs - dn);
+            tLop += lop; tHs += hs; tDone += dn;
+        }
+        s1.row(true, null, "Tổng cộng", tLop, tHs, tDone, tHs - tDone);
+        
+
+        /* ---------- III.1 NHÂN SỰ ---------- */
+        Xlsx.Sheet s2 = x.sheet("II. Nhân sự");
+        s2.row(true, "1. ĐỘI NGŨ NHÂN SỰ CỦA TRUNG TÂM");
+        s2.row(false);
+        s2.row(true, "STT", "Chức danh", "Số lượng", "Thực hiện hợp đồng lao động");
+        List<Object[]> gvAll = Db.query("SELECT ho_ten, quoc_tich, chung_chi, so_dien_thoai FROM Giao_vien ORDER BY id_giao_vien",
+                rs -> new Object[]{nz(rs.getString(1)), nz(rs.getString(2)), nz(rs.getString(3)), nz(rs.getString(4))});
+        List<Object[]> gvVn = new ArrayList<>(), gvNn = new ArrayList<>();
+        for (Object[] g : gvAll) {
+            String q = ((String) g[1]).toLowerCase(new Locale("vi"));
+            (q.contains("việt") || q.contains("viet") ? gvVn : gvNn).add(g);
+        }
+        stt = 1;
+        for (Object[] r : Db.query("SELECT vai_tro, COUNT(*) FROM Nhan_vien GROUP BY vai_tro ORDER BY COUNT(*) DESC",
+                rs -> new Object[]{rs.getString(1), rs.getLong(2)}))
+            s2.row(false, stt++, r[0], r[1], r[1]);
+        s2.row(false, stt++, "Giáo viên nước ngoài", gvNn.size(), gvNn.size());
+        s2.row(false, stt, "Giáo viên Việt Nam", gvVn.size(), gvVn.size());
+        s2.row(false);
+        s2.row(true, "Thông tin người lao động nước ngoài");
+        s2.row(true, "STT", "Họ và tên", "Quốc tịch", "Bằng cấp / chứng chỉ", "Số điện thoại");
+        stt = 1;
+        for (Object[] g : gvNn) s2.row(false, stt++, g[0], g[1], g[2], g[3]);
+        s2.row(false);
+        s2.row(true, "Thông tin người lao động Việt Nam");
+        s2.row(true, "STT", "Họ và tên", "Nhiệm vụ được phân công", "Trình độ / chứng chỉ", "Số điện thoại");
+        stt = 1;
+        for (Object[] g : gvVn) s2.row(false, stt++, g[0], "Giáo viên", g[2], g[3]);
+        for (Object[] r : Db.query("SELECT ho_ten, vai_tro FROM Nhan_vien ORDER BY ma_nhan_vien",
+                rs -> new Object[]{nz(rs.getString(1)), nz(rs.getString(2))}))
+            s2.row(false, stt++, r[0], r[1]);
+
+        /* ---------- III.2 BÁO CÁO TÀI CHÍNH ---------- */
+        Xlsx.Sheet s3 = x.sheet("III. Tài chính");
+        s3.row(true, "2. BÁO CÁO TÀI CHÍNH");
+        s3.row(false, ky);
+        s3.row(false);
+        s3.row(true, "a) Tổng thu");
+        s3.row(true, "- Học phí niêm yết theo khóa học");
+        s3.row(true, "Mã khóa", "Tên khóa học", "Cấp độ", "Chuyên đề", "Học phí (₫)");
+        for (Object[] r : Db.query("SELECT ma_khoa_hoc, ten_khoa_hoc, trinh_do, chuyen_de, hoc_phi FROM Khoa_hoc "
+                        + "ORDER BY trinh_do DESC, ma_khoa_hoc",
+                rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getLong(5)}))
+            s3.row(false, r);
+        s3.row(false);
+        s3.row(true, "- Thực thu học phí theo cấp độ (hóa đơn đã nộp)");
+        s3.row(true, "Cấp độ", "Số hóa đơn", "Số tiền (₫)");
+        long thu = 0;
+        for (Object[] r : Db.query("SELECT COALESCE(k.trinh_do, 'Khác'), COUNT(*), SUM(h.khoan_thu) FROM hoa_don h "
+                        + "LEFT JOIN Khoa_hoc k ON k.ma_khoa_hoc = SUBSTRING_INDEX(h.ma_ghi_danh, ':', -1) "
+                        + "WHERE h.trang_thai = 'Đã nộp' AND COALESCE(h.ngay_nop, h.ngay_lap) >= ? "
+                        + "AND COALESCE(h.ngay_nop, h.ngay_lap) < ? GROUP BY 1 ORDER BY 1 DESC",
+                rs -> new Object[]{rs.getString(1), rs.getLong(2), rs.getLong(3)}, t1, t2)) {
+            s3.row(false, r);
+            thu += (Long) r[2];
+        }
+        s3.row(true, "Tổng thu", null, thu);
+        s3.row(false, "- Các khoản thu khác: Không có");
+        s3.row(false);
+
+        long luongGv = Db.scalar("SELECT COALESCE(SUM(tong_luong), 0) FROM Phieu_luong WHERE ngay_tra >= ? AND ngay_tra < ?", t1, t2);
+        long luongNv = Db.scalar("SELECT COALESCE(SUM(luong), 0) FROM Nhan_vien");
+        long thang = java.time.temporal.ChronoUnit.MONTHS.between(YearMonth.from(from), YearMonth.from(to)) + 1;
+        s3.row(true, "b) Tổng chi");
+        s3.row(false, "- Lương giáo viên (theo phiếu lương đã lập)", luongGv);
+        s3.row(false, "- Lương nhân viên (ước tính: tổng mức lương tháng × " + thang + " tháng)", luongNv * thang);
+        s3.row(true, "Tổng chi", luongGv + luongNv * thang);
+        s3.row(false);
+        s3.row(true, "Chênh lệch (thu - chi)", thu - luongGv - luongNv * thang);
+    }
     private void exportReport() {
         if (!canPayroll()) { toast("Chỉ Kế toán / Quản lý được xuất báo cáo tài chính.", T_ERR); return; }
         LocalDate now = LocalDate.now();
@@ -2888,7 +3087,7 @@ static String payMethod(String s) {
 
         async(() -> {
             RowMapper inv = rs -> new Object[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getLong(4),
-                    when(rs, 5, true).toString(), nz(rs.getString(6)), when(rs, 7, true).toString()};
+                    when(rs, 5, true).toString(), payMethod(rs.getString(6)), when(rs, 7, true).toString()};
             List<Object[]> paid = Db.query(INVOICE_SELECT
                     + " WHERE h.trang_thai = 'Đã nộp' AND COALESCE(h.ngay_nop, h.ngay_lap) >= ?"
                     + " AND COALESCE(h.ngay_nop, h.ngay_lap) < ? ORDER BY COALESCE(h.ngay_nop, h.ngay_lap)", inv, t1, t2);
@@ -2919,6 +3118,7 @@ static String payMethod(String s) {
             for (Object[] r : pay) chi += (Long) r[5];
 
             Xlsx x = new Xlsx();
+            addTemplateSheets(x, from, to, t1, t2);
             Xlsx.Sheet s1 = x.sheet("Tổng hợp");
             s1.row(true, "BÁO CÁO TÀI CHÍNH TRUNG TÂM S-LINK");
             s1.row(false, "Kỳ báo cáo: " + from.format(D_FMT) + " - " + to.format(D_FMT));
@@ -2958,6 +3158,678 @@ static String payMethod(String s) {
             return out.getName();
         }, name -> toast("Đã xuất báo cáo: " + name, T_OK));
     }
+    /* ============================ TRUNG TÂM XUẤT DỮ LIỆU (EXCEL) ============================ */
+    /* DÁN CẢ KHỐI NÀY vào trong class StaffDashboardUI, ngay phía trên dòng:  public static void main(String[] args) */
+
+    static final int F_CHOICE = 0, F_TEXT = 1, F_NUM = 2, F_DATE = 3;
+
+    /** Một điều kiện lọc */
+    static final class Flt {
+        final int kind;
+        final String label, expr;
+        final String[] names, sqls;
+        Flt(int kind, String label, String expr, String[] names, String[] sqls) {
+            this.kind = kind; this.label = label; this.expr = expr; this.names = names; this.sqls = sqls;
+        }
+    }
+
+    /** Lựa chọn: các cặp (nhãn, điều kiện SQL). "Tất cả" được tự thêm vào đầu. */
+    static Flt fCh(String label, String... pairs) {
+        int n = pairs.length / 2;
+        String[] names = new String[n + 1], sqls = new String[n + 1];
+        names[0] = "Tất cả";
+        for (int i = 0; i < n; i++) { names[i + 1] = pairs[2 * i]; sqls[i + 1] = pairs[2 * i + 1]; }
+        return new Flt(F_CHOICE, label, null, names, sqls);
+    }
+    static Flt fTx(String label, String expr) { return new Flt(F_TEXT, label, expr, null, null); }
+    static Flt fNm(String label, String expr) { return new Flt(F_NUM, label, expr, null, null); }
+    static Flt fDt(String label, String expr) { return new Flt(F_DATE, label, expr, null, null); }
+    static Flt fLvl(String label, String col) {
+        return fCh(label, "N5", col + " = 'N5'", "N4", col + " = 'N4'", "N3", col + " = 'N3'",
+                "N2", col + " = 'N2'", "N1", col + " = 'N1'");
+    }
+
+    /** Một loại dữ liệu có thể xuất */
+    static final class DS {
+        final String key, file, title, sql;
+        final String[] heads, sortNames, sortSql;
+        final Flt[] filters;
+        final int[] sums;
+        final boolean sensitive;
+        DS(String key, String file, String title, String sql, String[] heads, String[] sortPairs,
+           Flt[] filters, int[] sums, boolean sensitive) {
+            this.key = key; this.file = file; this.title = title; this.sql = sql; this.heads = heads;
+            this.filters = filters; this.sums = sums; this.sensitive = sensitive;
+            int n = sortPairs.length / 2;
+            sortNames = new String[n];
+            sortSql = new String[n];
+            for (int i = 0; i < n; i++) { sortNames[i] = sortPairs[2 * i]; sortSql[i] = sortPairs[2 * i + 1]; }
+        }
+    }
+
+    interface Cond { String build(List<Object> par, List<String> dsc); }
+
+    static final class FormUi {
+        final JPanel panel = new JPanel(new GridBagLayout());
+        RoundCombo sort;
+        StyledField top;
+        JCheckBox total;
+        final List<Cond> conds = new ArrayList<>();
+    }
+
+    static final class ExportJob {
+        final DS ds; final String sql; final Object[] params; final List<String> desc;
+        final String sortName; final int top; final boolean total;
+        ExportJob(DS ds, String sql, Object[] params, List<String> desc, String sortName, int top, boolean total) {
+            this.ds = ds; this.sql = sql; this.params = params; this.desc = desc;
+            this.sortName = sortName; this.top = top; this.total = total;
+        }
+    }
+
+    /** Toàn bộ định nghĩa: câu SELECT gốc + cách sắp xếp + bộ lọc của từng loại dữ liệu */
+    static List<DS> exportSpecs() {
+        List<DS> L = new ArrayList<>();
+
+        /* ---------- 1. HÓA ĐƠN ---------- */
+        L.add(new DS("hoadon", "HoaDon", "Hóa đơn học phí",
+                "SELECT h.ma_hoa_don AS ma_hd, COALESCE(hs.ho_ten, h.ma_ghi_danh) AS hoc_sinh, "
+                        + "COALESCE(k.ten_khoa_hoc, '—') AS khoa_hoc, COALESCE(k.trinh_do, '—') AS cap_do, "
+                        + "h.khoan_thu AS khoan_thu, h.ngay_lap AS ngay_lap, COALESCE(h.hinh_thuc, '—') AS hinh_thuc, "
+                        + "COALESCE(h.trang_thai, 'Chưa nộp') AS trang_thai, h.ngay_nop AS ngay_nop, "
+                        + "COALESCE(nv.ho_ten, h.ma_nhan_vien) AS nguoi_lap, COALESCE(xn.ho_ten, h.nv_xac_nhan, '') AS nguoi_xn "
+                        + "FROM hoa_don h "
+                        + "LEFT JOIN Hoc_sinh hs ON hs.ma_sinh_vien = SUBSTRING_INDEX(h.ma_ghi_danh, ':', 1) "
+                        + "LEFT JOIN Khoa_hoc k ON k.ma_khoa_hoc = SUBSTRING_INDEX(h.ma_ghi_danh, ':', -1) "
+                        + "LEFT JOIN Nhan_vien nv ON nv.ma_nhan_vien = h.ma_nhan_vien "
+                        + "LEFT JOIN Nhan_vien xn ON xn.ma_nhan_vien = h.nv_xac_nhan",
+                new String[]{"Mã hóa đơn", "Học sinh", "Khóa học", "Cấp độ", "Khoản thu (₫)", "Ngày lập", "Hình thức",
+                        "Trạng thái", "Ngày nộp", "Người lập", "Người xác nhận"},
+                new String[]{
+                        "Ngày lập: mới nhất trước", "ngay_lap DESC, ma_hd",
+                        "Ngày lập: cũ nhất trước", "ngay_lap ASC, ma_hd",
+                        "Khoản thu: cao → thấp", "khoan_thu DESC, ma_hd",
+                        "Khoản thu: thấp → cao", "khoan_thu ASC, ma_hd",
+                        "Tên học sinh: A → Z", "hoc_sinh ASC, ngay_lap DESC",
+                        "Tên học sinh: Z → A", "hoc_sinh DESC, ngay_lap DESC",
+                        "Tên khóa học: A → Z", "khoa_hoc ASC, ma_hd",
+                        "Cấp độ: N1 → N5", "FIELD(cap_do, 'N1', 'N2', 'N3', 'N4', 'N5'), ma_hd",
+                        "Cấp độ: N5 → N1", "FIELD(cap_do, 'N5', 'N4', 'N3', 'N2', 'N1'), ma_hd",
+                        "Ngày nộp: mới nhất trước", "ngay_nop DESC, ma_hd",
+                        "Chưa nộp xếp trước", "FIELD(trang_thai, 'Chưa nộp', 'Đã nộp'), ngay_lap DESC",
+                        "Đã nộp xếp trước", "FIELD(trang_thai, 'Đã nộp', 'Chưa nộp'), ngay_lap DESC",
+                        "Mã hóa đơn: A → Z", "ma_hd ASC"},
+                new Flt[]{
+                        fCh("Trạng thái", "Đã nộp", "trang_thai = 'Đã nộp'", "Chưa nộp", "trang_thai = 'Chưa nộp'"),
+                        fCh("Hình thức thanh toán", "Tiền mặt", "hinh_thuc = 'Tiền mặt'", "Chuyển khoản", "hinh_thuc = 'Chuyển khoản'",
+                                "Thẻ", "hinh_thuc = 'Thẻ'", "Chưa có hình thức", "hinh_thuc = '—'"),
+                        fLvl("Cấp độ khóa học", "cap_do"),
+                        fCh("Công nợ quá hạn",
+                                "Quá 30 ngày", "(trang_thai = 'Chưa nộp' AND ngay_lap < NOW() - INTERVAL 30 DAY)",
+                                "Quá 60 ngày", "(trang_thai = 'Chưa nộp' AND ngay_lap < NOW() - INTERVAL 60 DAY)",
+                                "Quá 90 ngày", "(trang_thai = 'Chưa nộp' AND ngay_lap < NOW() - INTERVAL 90 DAY)"),
+                        fCh("Mức tiền", "Dưới 3 triệu", "khoan_thu < 3000000", "Từ 3 đến 5 triệu", "khoan_thu BETWEEN 3000000 AND 5000000",
+                                "Trên 5 triệu", "khoan_thu > 5000000"),
+                        fDt("Ngày lập", "ngay_lap"), fDt("Ngày nộp", "ngay_nop"),
+                        fNm("Khoản thu (₫)", "khoan_thu"),
+                        fTx("Học sinh", "hoc_sinh"), fTx("Khóa học", "khoa_hoc"),
+                        fTx("Người lập", "nguoi_lap"), fTx("Người xác nhận", "nguoi_xn")},
+                new int[]{4}, false));
+
+        /* ---------- 2. HỌC SINH ---------- */
+        L.add(new DS("hocsinh", "HocSinh", "Học sinh",
+                "SELECT hs.ma_sinh_vien AS ma, hs.ho_ten AS ho_ten, hs.ngay_sinh AS ngay_sinh, "
+                        + "TIMESTAMPDIFF(YEAR, hs.ngay_sinh, CURDATE()) AS tuoi, hs.trinh_do AS trinh_do, "
+                        + "hs.so_dien_thoai AS sdt, COALESCE(gv.ho_ten, 'Chưa phân công') AS gv, "
+                        + "(SELECT COUNT(*) FROM Hoc_sinh_lop x WHERE x.ma_sinh_vien = hs.ma_sinh_vien) AS so_lop, "
+                        + "(SELECT COALESCE(SUM(d.khoan_thu), 0) FROM hoa_don d WHERE SUBSTRING_INDEX(d.ma_ghi_danh, ':', 1) = hs.ma_sinh_vien "
+                        + "AND d.trang_thai = 'Đã nộp') AS da_dong, "
+                        + "(SELECT COALESCE(SUM(d.khoan_thu), 0) FROM hoa_don d WHERE SUBSTRING_INDEX(d.ma_ghi_danh, ':', 1) = hs.ma_sinh_vien "
+                        + "AND d.trang_thai = 'Chưa nộp') AS con_no "
+                        + "FROM Hoc_sinh hs LEFT JOIN Giao_vien gv ON gv.id_giao_vien = hs.id_giao_vien",
+                new String[]{"Mã SV", "Họ tên", "Ngày sinh", "Tuổi", "Trình độ", "Số điện thoại", "GV phụ trách",
+                        "Số lớp", "Đã đóng (₫)", "Còn nợ (₫)"},
+                new String[]{
+                        "Tên: A → Z", "ho_ten ASC",
+                        "Tên: Z → A", "ho_ten DESC",
+                        "Tuổi: lớn → nhỏ", "tuoi DESC, ho_ten",
+                        "Tuổi: nhỏ → lớn", "tuoi ASC, ho_ten",
+                        "Trình độ: N1 → N5", "FIELD(trinh_do, 'N1', 'N2', 'N3', 'N4', 'N5', 'Chưa xác định'), ho_ten",
+                        "Trình độ: N5 → N1", "FIELD(trinh_do, 'N5', 'N4', 'N3', 'N2', 'N1', 'Chưa xác định'), ho_ten",
+                        "Số lớp: nhiều → ít", "so_lop DESC, ho_ten",
+                        "Đã đóng học phí: nhiều → ít", "da_dong DESC, ho_ten",
+                        "Còn nợ: nhiều → ít", "con_no DESC, ho_ten",
+                        "Ngày sinh: cũ nhất trước", "ngay_sinh ASC",
+                        "Mã sinh viên", "LENGTH(ma), ma"},
+                new Flt[]{
+                        fCh("Trình độ", "N5", "trinh_do = 'N5'", "N4", "trinh_do = 'N4'", "N3", "trinh_do = 'N3'",
+                                "N2", "trinh_do = 'N2'", "N1", "trinh_do = 'N1'", "Chưa xác định", "trinh_do = 'Chưa xác định'"),
+                        fCh("Tình trạng học phí", "Còn nợ", "con_no > 0", "Không nợ", "con_no = 0", "Đã đóng trên 10 triệu", "da_dong > 10000000"),
+                        fCh("Lớp học", "Đã có lớp", "so_lop > 0", "Chưa có lớp", "so_lop = 0", "Học từ 3 lớp trở lên", "so_lop >= 3"),
+                        fCh("Nhóm tuổi", "Dưới 18", "tuoi < 18", "Từ 18 đến 25", "tuoi BETWEEN 18 AND 25", "Trên 25", "tuoi > 25"),
+                        fNm("Tuổi", "tuoi"), fDt("Ngày sinh", "ngay_sinh"),
+                        fNm("Số lớp", "so_lop"), fNm("Đã đóng (₫)", "da_dong"), fNm("Còn nợ (₫)", "con_no"),
+                        fTx("Họ tên", "ho_ten"), fTx("Số điện thoại", "sdt"), fTx("Giáo viên phụ trách", "gv")},
+                new int[]{8, 9}, false));
+
+        /* ---------- 3. GIÁO VIÊN (có lương nên cần quyền Kế toán / Quản lý) ---------- */
+        L.add(new DS("giaovien", "GiaoVien", "Giáo viên",
+                "SELECT gv.id_giao_vien AS ma, gv.ho_ten AS ho_ten, gv.quoc_tich AS quoc_tich, gv.chung_chi AS chung_chi, "
+                        + "gv.so_dien_thoai AS sdt, "
+                        + "(SELECT COUNT(*) FROM Quanli q WHERE q.id_giao_vien = gv.id_giao_vien) AS so_lop, "
+                        + "(SELECT COUNT(*) FROM Hoc_sinh h WHERE h.id_giao_vien = gv.id_giao_vien) AS so_hs, "
+                        + "(SELECT COUNT(*) FROM Lich_hoc lh WHERE lh.id_giao_vien = gv.id_giao_vien AND lh.trang_thai_buoi = 'Dạy') AS buoi_day, "
+                        + "(SELECT COALESCE(SUM(p.tong_luong), 0) FROM Phieu_luong p WHERE p.id_giao_vien = gv.id_giao_vien) AS tong_luong "
+                        + "FROM Giao_vien gv",
+                new String[]{"Mã GV", "Họ tên", "Quốc tịch", "Chứng chỉ", "Số điện thoại", "Số lớp phụ trách",
+                        "Số học sinh", "Số buổi đã dạy", "Tổng lương đã nhận (₫)"},
+                new String[]{
+                        "Tên: A → Z", "ho_ten ASC",
+                        "Tên: Z → A", "ho_ten DESC",
+                        "Quốc tịch: A → Z", "quoc_tich ASC, ho_ten",
+                        "Số buổi dạy: nhiều → ít", "buoi_day DESC, ho_ten",
+                        "Số buổi dạy: ít → nhiều", "buoi_day ASC, ho_ten",
+                        "Tổng lương: cao → thấp", "tong_luong DESC, ho_ten",
+                        "Tổng lương: thấp → cao", "tong_luong ASC, ho_ten",
+                        "Số lớp: nhiều → ít", "so_lop DESC, ho_ten",
+                        "Số học sinh: nhiều → ít", "so_hs DESC, ho_ten",
+                        "Mã giáo viên", "LENGTH(ma), ma"},
+                new Flt[]{
+                        fCh("Nhóm giáo viên", "Việt Nam", "quoc_tich LIKE '%Việt%'", "Nước ngoài", "quoc_tich NOT LIKE '%Việt%'"),
+                        fCh("Chứng chỉ JLPT", "Có N1", "chung_chi LIKE '%N1%'", "Có N2", "chung_chi LIKE '%N2%'",
+                                "Có N3", "chung_chi LIKE '%N3%'", "Không có JLPT", "chung_chi NOT LIKE '%JLPT%'"),
+                        fCh("Khối lượng dạy", "Chưa dạy buổi nào", "buoi_day = 0", "Đã có buổi dạy", "buoi_day > 0",
+                                "Dạy trên 20 buổi", "buoi_day > 20"),
+                        fTx("Họ tên", "ho_ten"), fTx("Quốc tịch", "quoc_tich"), fTx("Chứng chỉ", "chung_chi"),
+                        fTx("Số điện thoại", "sdt"),
+                        fNm("Số lớp phụ trách", "so_lop"), fNm("Số học sinh", "so_hs"),
+                        fNm("Số buổi đã dạy", "buoi_day"), fNm("Tổng lương đã nhận (₫)", "tong_luong")},
+                new int[]{7, 8}, true));
+
+        /* ---------- 4. NHÂN VIÊN (có lương nên cần quyền) ---------- */
+        L.add(new DS("nhanvien", "NhanVien", "Nhân viên",
+                "SELECT nv.ma_nhan_vien AS ma, nv.ho_ten AS ho_ten, nv.vai_tro AS vai_tro, nv.luong AS luong, "
+                        + "(SELECT COUNT(*) FROM Lop l WHERE l.ma_nhan_vien = nv.ma_nhan_vien) AS so_lop, "
+                        + "(SELECT COUNT(*) FROM hoa_don h WHERE h.nv_xac_nhan = nv.ma_nhan_vien) AS hd_xn, "
+                        + "(SELECT COUNT(*) FROM Phieu_luong p WHERE p.ma_nhan_vien = nv.ma_nhan_vien) AS phieu_lap "
+                        + "FROM Nhan_vien nv",
+                new String[]{"Mã NV", "Họ tên", "Chức danh", "Mức lương (₫)", "Số lớp phụ trách",
+                        "Hóa đơn đã xác nhận", "Phiếu lương đã lập"},
+                new String[]{
+                        "Lương: cao → thấp", "luong DESC, ho_ten",
+                        "Lương: thấp → cao", "luong ASC, ho_ten",
+                        "Tên: A → Z", "ho_ten ASC",
+                        "Tên: Z → A", "ho_ten DESC",
+                        "Chức danh: A → Z", "vai_tro ASC, ho_ten",
+                        "Số lớp phụ trách: nhiều → ít", "so_lop DESC, ho_ten",
+                        "Hóa đơn xác nhận: nhiều → ít", "hd_xn DESC, ho_ten",
+                        "Mã nhân viên", "LENGTH(ma), ma"},
+                new Flt[]{
+                        fCh("Chức danh", "Quản lý", "vai_tro LIKE '%Quản lý%'", "Kế toán", "vai_tro LIKE '%Kế toán%'",
+                                "Tư vấn", "vai_tro LIKE '%Tư vấn%'", "Thu ngân", "vai_tro LIKE '%Thu ngân%'",
+                                "Lễ tân", "vai_tro LIKE '%Lễ tân%'"),
+                        fCh("Quyền lập phiếu lương",
+                                "Có quyền", "(vai_tro LIKE '%Kế toán%' OR vai_tro LIKE '%Quản lý%' OR vai_tro LIKE '%Giám đốc%')",
+                                "Không có quyền", "NOT (vai_tro LIKE '%Kế toán%' OR vai_tro LIKE '%Quản lý%' OR vai_tro LIKE '%Giám đốc%')"),
+                        fCh("Mức lương", "Dưới 8 triệu", "luong < 8000000", "Từ 8 đến 12 triệu", "luong BETWEEN 8000000 AND 12000000",
+                                "Trên 12 triệu", "luong > 12000000"),
+                        fNm("Mức lương (₫)", "luong"),
+                        fTx("Họ tên", "ho_ten"), fTx("Chức danh (gõ tay)", "vai_tro"),
+                        fNm("Số lớp phụ trách", "so_lop"), fNm("Hóa đơn đã xác nhận", "hd_xn"),
+                        fNm("Phiếu lương đã lập", "phieu_lap")},
+                new int[]{3}, true));
+
+        /* ---------- 5. LỚP HỌC ---------- */
+        L.add(new DS("lop", "LopHoc", "Lớp học",
+                "SELECT l.id_lop AS ma, l.ten_lop AS ten_lop, COALESCE(k.ten_khoa_hoc, '—') AS khoa_hoc, "
+                        + "COALESCE(k.trinh_do, '—') AS trinh_do, l.nien_khoa AS nien_khoa, COALESCE(l.si_so, 0) AS si_so, "
+                        + "COALESCE(nv.ho_ten, l.ma_nhan_vien) AS nv, "
+                        + "(SELECT GROUP_CONCAT(g.ho_ten SEPARATOR ', ') FROM Quanli q JOIN Giao_vien g ON g.id_giao_vien = q.id_giao_vien "
+                        + "WHERE q.id_lop = l.id_lop) AS giao_vien, COALESCE(k.hoc_phi, 0) AS hoc_phi, "
+                        + "(SELECT COUNT(*) FROM Lich_hoc lh WHERE lh.id_lop = l.id_lop AND lh.trang_thai_buoi = 'Dạy') AS so_buoi "
+                        + "FROM Lop l LEFT JOIN Khoa_hoc k ON k.ma_khoa_hoc = l.ma_khoa_hoc "
+                        + "LEFT JOIN Nhan_vien nv ON nv.ma_nhan_vien = l.ma_nhan_vien",
+                new String[]{"Mã lớp", "Tên lớp", "Khóa học", "Trình độ", "Niên khóa", "Sĩ số", "NV phụ trách",
+                        "Giáo viên", "Học phí (₫)", "Số buổi đã dạy"},
+                new String[]{
+                        "Mã lớp", "LENGTH(ma), ma",
+                        "Tên lớp: A → Z", "ten_lop ASC",
+                        "Sĩ số: đông nhất → ít nhất", "si_so DESC, ma",
+                        "Sĩ số: ít nhất → đông nhất", "si_so ASC, ma",
+                        "Học phí: cao → thấp", "hoc_phi DESC, ma",
+                        "Học phí: thấp → cao", "hoc_phi ASC, ma",
+                        "Trình độ: N1 → N5", "FIELD(trinh_do, 'N1', 'N2', 'N3', 'N4', 'N5'), ma",
+                        "Trình độ: N5 → N1", "FIELD(trinh_do, 'N5', 'N4', 'N3', 'N2', 'N1'), ma",
+                        "Niên khóa: mới nhất trước", "nien_khoa DESC, ma",
+                        "Số buổi đã dạy: nhiều → ít", "so_buoi DESC, ma"},
+                new Flt[]{
+                        fLvl("Trình độ", "trinh_do"),
+                        fCh("Niên khóa", "2025-2026", "nien_khoa = '2025-2026'", "2026-2027", "nien_khoa = '2026-2027'"),
+                        fCh("Tình trạng sĩ số", "Lớp trống", "si_so = 0", "Dưới 10 học viên", "si_so < 10",
+                                "Từ 10 học viên trở lên", "si_so >= 10"),
+                        fNm("Sĩ số", "si_so"), fNm("Học phí (₫)", "hoc_phi"), fNm("Số buổi đã dạy", "so_buoi"),
+                        fTx("Tên lớp", "ten_lop"), fTx("Khóa học", "khoa_hoc"),
+                        fTx("Nhân viên phụ trách", "nv"), fTx("Giáo viên", "giao_vien")},
+                new int[]{5, 9}, false));
+
+        /* ---------- 6. KHÓA HỌC ---------- */
+        L.add(new DS("khoahoc", "KhoaHoc", "Khóa học",
+                "SELECT k.ma_khoa_hoc AS ma, k.ten_khoa_hoc AS ten, k.trinh_do AS trinh_do, k.chuyen_de AS chuyen_de, "
+                        + "k.giao_trinh AS giao_trinh, k.hoc_phi AS hoc_phi, "
+                        + "(SELECT COUNT(*) FROM Lop l WHERE l.ma_khoa_hoc = k.ma_khoa_hoc) AS so_lop, "
+                        + "(SELECT COALESCE(SUM(l.si_so), 0) FROM Lop l WHERE l.ma_khoa_hoc = k.ma_khoa_hoc) AS so_hv, "
+                        + "(SELECT COALESCE(SUM(d.khoan_thu), 0) FROM hoa_don d WHERE d.trang_thai = 'Đã nộp' "
+                        + "AND SUBSTRING_INDEX(d.ma_ghi_danh, ':', -1) = k.ma_khoa_hoc) AS doanh_thu "
+                        + "FROM Khoa_hoc k",
+                new String[]{"Mã khóa", "Tên khóa học", "Trình độ", "Chuyên đề", "Giáo trình", "Học phí (₫)",
+                        "Số lớp", "Số học viên", "Doanh thu đã thu (₫)"},
+                new String[]{
+                        "Học phí: đắt nhất → rẻ nhất", "hoc_phi DESC, ma",
+                        "Học phí: rẻ nhất → đắt nhất", "hoc_phi ASC, ma",
+                        "Doanh thu: cao → thấp", "doanh_thu DESC, ma",
+                        "Doanh thu: thấp → cao", "doanh_thu ASC, ma",
+                        "Số học viên: đông nhất → ít nhất", "so_hv DESC, ma",
+                        "Số lớp: nhiều → ít", "so_lop DESC, ma",
+                        "Tên khóa học: A → Z", "ten ASC",
+                        "Tên khóa học: Z → A", "ten DESC",
+                        "Trình độ: N1 → N5", "FIELD(trinh_do, 'N1', 'N2', 'N3', 'N4', 'N5'), ma",
+                        "Trình độ: N5 → N1", "FIELD(trinh_do, 'N5', 'N4', 'N3', 'N2', 'N1'), ma",
+                        "Mã khóa", "LENGTH(ma), ma"},
+                new Flt[]{
+                        fLvl("Trình độ", "trinh_do"),
+                        fCh("Mức học phí", "Dưới 3 triệu", "hoc_phi < 3000000", "Từ 3 đến 5 triệu", "hoc_phi BETWEEN 3000000 AND 5000000",
+                                "Trên 5 triệu", "hoc_phi > 5000000"),
+                        fCh("Tình trạng mở lớp", "Đã mở lớp", "so_lop > 0", "Chưa mở lớp", "so_lop = 0"),
+                        fCh("Doanh thu", "Chưa có doanh thu", "doanh_thu = 0", "Đã có doanh thu", "doanh_thu > 0"),
+                        fNm("Học phí (₫)", "hoc_phi"), fNm("Số lớp", "so_lop"),
+                        fNm("Số học viên", "so_hv"), fNm("Doanh thu (₫)", "doanh_thu"),
+                        fTx("Tên khóa học", "ten"), fTx("Chuyên đề", "chuyen_de"), fTx("Giáo trình", "giao_trinh")},
+                new int[]{6, 7, 8}, false));
+
+        /* ---------- 7. LỊCH HỌC ---------- */
+        L.add(new DS("lich", "LichHoc", "Lịch học",
+                "SELECT lh.ma_lich_hoc AS ma, COALESCE(l.ten_lop, lh.id_lop) AS lop, "
+                        + "COALESCE(gv.ho_ten, lh.id_giao_vien) AS giao_vien, lh.ngay_day AS ngay_day, lh.ca_hoc AS ca_hoc, "
+                        + "lh.phong_hoc AS phong, lh.noi_dung AS noi_dung, lh.trang_thai_buoi AS trang_thai, "
+                        + "COALESCE(k.trinh_do, '—') AS cap_do FROM Lich_hoc lh "
+                        + "LEFT JOIN Lop l ON l.id_lop = lh.id_lop "
+                        + "LEFT JOIN Khoa_hoc k ON k.ma_khoa_hoc = l.ma_khoa_hoc "
+                        + "LEFT JOIN Giao_vien gv ON gv.id_giao_vien = lh.id_giao_vien",
+                new String[]{"Mã lịch", "Lớp", "Giáo viên", "Ngày dạy", "Ca học", "Phòng", "Nội dung", "Trạng thái", "Cấp độ"},
+                new String[]{
+                        "Buổi sắp tới trước, rồi đã qua", "(ngay_day < CURDATE()), IF(ngay_day >= CURDATE(), ngay_day, NULL), ngay_day DESC",
+                        "Ngày dạy: mới → cũ", "ngay_day DESC, ma",
+                        "Ngày dạy: cũ → mới", "ngay_day ASC, ma",
+                        "Giáo viên: A → Z", "giao_vien ASC, ngay_day",
+                        "Lớp: A → Z", "lop ASC, ngay_day",
+                        "Phòng học: A → Z", "phong ASC, ngay_day",
+                        "Cấp độ: N1 → N5", "FIELD(cap_do, 'N1', 'N2', 'N3', 'N4', 'N5'), ngay_day",
+                        "Cấp độ: N5 → N1", "FIELD(cap_do, 'N5', 'N4', 'N3', 'N2', 'N1'), ngay_day"},
+                new Flt[]{
+                        fCh("Trạng thái buổi", "Dạy", "trang_thai = 'Dạy'", "Nghỉ", "trang_thai = 'Nghỉ'"),
+                        fCh("Thời gian", "Hôm nay", "DATE(ngay_day) = CURDATE()",
+                                "Sắp tới (từ hôm nay)", "ngay_day >= CURDATE()", "Đã qua", "ngay_day < CURDATE()",
+                                "Tuần này", "YEARWEEK(ngay_day, 1) = YEARWEEK(CURDATE(), 1)",
+                                "Tháng này", "(YEAR(ngay_day) = YEAR(CURDATE()) AND MONTH(ngay_day) = MONTH(CURDATE()))"),
+                        fLvl("Cấp độ", "cap_do"),
+                        fDt("Ngày dạy", "ngay_day"),
+                        fTx("Lớp", "lop"), fTx("Giáo viên", "giao_vien"), fTx("Ca học", "ca_hoc"),
+                        fTx("Phòng học", "phong"), fTx("Nội dung", "noi_dung")},
+                new int[]{}, false));
+
+        /* ---------- 8. PHIẾU LƯƠNG (cần quyền) ---------- */
+        L.add(new DS("phieuluong", "PhieuLuong", "Phiếu lương giáo viên",
+                "SELECT p.ma_phieu_luong AS ma, COALESCE(gv.ho_ten, p.id_giao_vien) AS giao_vien, p.tu_ngay AS tu_ngay, "
+                        + "p.den_ngay AS den_ngay, p.ngay_tra AS ngay_tra, p.tong_luong AS tong_luong, "
+                        + "COALESCE(nv.ho_ten, p.ma_nhan_vien) AS nguoi_lap, "
+                        + "(SELECT COUNT(*) FROM Lich_hoc lh WHERE lh.id_giao_vien = p.id_giao_vien AND lh.trang_thai_buoi = 'Dạy' "
+                        + "AND lh.ngay_day >= p.tu_ngay AND lh.ngay_day < p.den_ngay + INTERVAL 1 DAY) AS so_buoi "
+                        + "FROM Phieu_luong p LEFT JOIN Giao_vien gv ON gv.id_giao_vien = p.id_giao_vien "
+                        + "LEFT JOIN Nhan_vien nv ON nv.ma_nhan_vien = p.ma_nhan_vien",
+                new String[]{"Mã phiếu", "Giáo viên", "Từ ngày", "Đến ngày", "Ngày trả", "Tổng lương (₫)",
+                        "Người lập", "Số buổi dạy trong kỳ"},
+                new String[]{
+                        "Ngày trả: mới nhất trước", "ngay_tra DESC, ma",
+                        "Ngày trả: cũ nhất trước", "ngay_tra ASC, ma",
+                        "Tổng lương: cao → thấp", "tong_luong DESC, ma",
+                        "Tổng lương: thấp → cao", "tong_luong ASC, ma",
+                        "Giáo viên: A → Z", "giao_vien ASC, ngay_tra DESC",
+                        "Giáo viên: Z → A", "giao_vien DESC, ngay_tra DESC",
+                        "Số buổi dạy: nhiều → ít", "so_buoi DESC, ma",
+                        "Người lập: A → Z", "nguoi_lap ASC, ngay_tra DESC"},
+                new Flt[]{
+                        fCh("Thời gian trả lương",
+                                "Tháng này", "(YEAR(ngay_tra) = YEAR(CURDATE()) AND MONTH(ngay_tra) = MONTH(CURDATE()))",
+                                "3 tháng gần nhất", "ngay_tra >= CURDATE() - INTERVAL 3 MONTH",
+                                "6 tháng gần nhất", "ngay_tra >= CURDATE() - INTERVAL 6 MONTH",
+                                "Năm nay", "YEAR(ngay_tra) = YEAR(CURDATE())"),
+                        fCh("Mức lương", "Dưới 8 triệu", "tong_luong < 8000000", "Từ 8 đến 10 triệu", "tong_luong BETWEEN 8000000 AND 10000000",
+                                "Trên 10 triệu", "tong_luong > 10000000"),
+                        fDt("Ngày trả", "ngay_tra"), fDt("Từ ngày (đầu kỳ)", "tu_ngay"),
+                        fNm("Tổng lương (₫)", "tong_luong"), fNm("Số buổi dạy trong kỳ", "so_buoi"),
+                        fTx("Giáo viên", "giao_vien"), fTx("Người lập", "nguoi_lap")},
+                new int[]{5, 7}, true));
+
+        /* ---------- 9. KẾT QUẢ THI ---------- */
+        L.add(new DS("ketquathi", "KetQuaThi", "Kết quả thi",
+                "SELECT kq.ma_bai_lam AS ma, COALESCE(hs.ho_ten, kq.ma_sinh_vien) AS hoc_sinh, kq.trinh_do AS trinh_do, "
+                        + "kq.diem_doc_hieu AS doc_hieu, kq.diem_tu_vung AS tu_vung, kq.diem_nghe AS nghe, "
+                        + "kq.tong_diem AS tong_diem, COALESCE(kq.tinh_trang, '—') AS ket_qua "
+                        + "FROM Ket_qua_thi kq LEFT JOIN Hoc_sinh hs ON hs.ma_sinh_vien = kq.ma_sinh_vien",
+                new String[]{"Mã bài làm", "Học sinh", "Trình độ", "Đọc hiểu", "Từ vựng", "Nghe", "Tổng điểm", "Kết quả"},
+                new String[]{
+                        "Tổng điểm: cao → thấp", "tong_diem DESC, ma",
+                        "Tổng điểm: thấp → cao", "tong_diem ASC, ma",
+                        "Điểm nghe: cao → thấp", "nghe DESC, ma",
+                        "Điểm đọc hiểu: cao → thấp", "doc_hieu DESC, ma",
+                        "Tên học sinh: A → Z", "hoc_sinh ASC, trinh_do",
+                        "Trình độ: N1 → N5", "FIELD(trinh_do, 'N1', 'N2', 'N3', 'N4', 'N5'), tong_diem DESC",
+                        "Trình độ: N5 → N1", "FIELD(trinh_do, 'N5', 'N4', 'N3', 'N2', 'N1'), tong_diem DESC",
+                        "ĐẠT xếp trước", "FIELD(ket_qua, 'ĐẠT', 'TRƯỢT'), tong_diem DESC"},
+                new Flt[]{
+                        fCh("Kết quả", "ĐẠT", "ket_qua = 'ĐẠT'", "TRƯỢT", "ket_qua = 'TRƯỢT'"),
+                        fLvl("Trình độ", "trinh_do"),
+                        fCh("Mức điểm", "Từ 100 điểm trở lên", "tong_diem >= 100", "Từ 80 đến 99", "tong_diem BETWEEN 80 AND 99",
+                                "Dưới 80", "tong_diem < 80"),
+                        fNm("Tổng điểm", "tong_diem"), fNm("Điểm đọc hiểu", "doc_hieu"),
+                        fNm("Điểm từ vựng", "tu_vung"), fNm("Điểm nghe", "nghe"),
+                        fTx("Học sinh", "hoc_sinh")},
+                new int[]{}, false));
+
+        return L;
+    }
+
+    /* ---------- tiện ích nhỏ cho hộp thoại ---------- */
+
+    private static Long parseNum(String s, String label) {
+        String d = s.replaceAll("[^0-9]", "");
+        if (d.isEmpty()) return null;
+        try { return Long.parseLong(d); }
+        catch (NumberFormatException ex) { throw new IllegalArgumentException(label + ": số quá lớn."); }
+    }
+
+    private static LocalDate parseDay(String s, String label) {
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+        try { return LocalDate.parse(t, IN_FMT); }
+        catch (DateTimeParseException ex) { throw new IllegalArgumentException(label + ": ngày phải đúng dạng dd/MM/yyyy."); }
+    }
+
+    private static void addCell(JPanel p, GridBagConstraints c, int col, int row, String label, JComponent field) {
+        int l = col == 0 ? 0 : 10, r = col == 0 ? 10 : 0;
+        c.gridx = col;
+        c.gridwidth = 1;
+        c.gridy = row * 2;
+        c.insets = new Insets(0, l, 4, r);
+        p.add(lbl(label, font(Font.BOLD, 12), MUTED), c);
+        c.gridy = row * 2 + 1;
+        c.insets = new Insets(0, l, 12, r);
+        p.add(field, c);
+    }
+
+    /** Dựng form sắp xếp + bộ lọc cho một loại dữ liệu */
+    private static FormUi buildForm(DS d) {
+        FormUi f = new FormUi();
+        f.panel.setOpaque(false);
+        GridBagConstraints c = new GridBagConstraints();
+        c.fill = GridBagConstraints.HORIZONTAL;
+        c.weightx = 1;
+        c.anchor = GridBagConstraints.NORTH;
+
+        f.sort = new RoundCombo(d.sortNames);
+        f.top = new StyledField("").withPlaceholder("Để trống = lấy tất cả", null);
+        int row = 0;
+        addCell(f.panel, c, 0, row, "Sắp xếp theo", f.sort);
+        addCell(f.panel, c, 1, row, "Chỉ lấy N dòng đầu (Top N)", f.top);
+        row++;
+
+        c.gridx = 0;
+        c.gridy = row * 2;
+        c.gridwidth = 2;
+        c.insets = new Insets(4, 0, 10, 0);
+        f.panel.add(lbl("BỘ LỌC  (để trống hoặc chọn \"Tất cả\" = không lọc)", font(Font.BOLD, 11), ACCENT_D), c);
+        row++;
+
+        int col = 0;
+        for (Flt fl : d.filters) {
+            JComponent comp;
+            String shown = fl.kind == F_DATE ? fl.label + " (dd/MM/yyyy)" : fl.label;
+            switch (fl.kind) {
+                case F_CHOICE: {
+                    final RoundCombo cb = new RoundCombo(fl.names);
+                    f.conds.add((par, dsc) -> {
+                        int i = cb.getSelectedIndex();
+                        if (i <= 0) return null;
+                        dsc.add(fl.label + ": " + fl.names[i]);
+                        return fl.sqls[i];
+                    });
+                    comp = cb;
+                    break;
+                }
+                case F_TEXT: {
+                    final StyledField tf = new StyledField("").withPlaceholder("Chứa chữ...", null);
+                    f.conds.add((par, dsc) -> {
+                        String t = tf.getText().trim();
+                        if (t.isEmpty()) return null;
+                        par.add("%" + t + "%");
+                        dsc.add(fl.label + " chứa \"" + t + "\"");
+                        return "(" + fl.expr + " LIKE ?)";
+                    });
+                    comp = tf;
+                    break;
+                }
+                case F_NUM: {
+                    final StyledField a = new StyledField("").withPlaceholder("Từ", null);
+                    final StyledField b = new StyledField("").withPlaceholder("Đến", null);
+                    JPanel pr = new JPanel(new GridLayout(1, 2, 8, 0));
+                    pr.setOpaque(false);
+                    pr.add(a);
+                    pr.add(b);
+                    f.conds.add((par, dsc) -> {
+                        Long lo = parseNum(a.getText(), fl.label), hi = parseNum(b.getText(), fl.label);
+                        if (lo == null && hi == null) return null;
+                        if (lo != null && hi != null && lo > hi)
+                            throw new IllegalArgumentException(fl.label + ": giá trị \"Từ\" đang lớn hơn \"Đến\".");
+                        List<String> parts = new ArrayList<>();
+                        String txt = "";
+                        if (lo != null) { par.add(lo); parts.add(fl.expr + " >= ?"); txt += "từ " + vnd(lo).replace(" ₫", "") + " "; }
+                        if (hi != null) { par.add(hi); parts.add(fl.expr + " <= ?"); txt += "đến " + vnd(hi).replace(" ₫", ""); }
+                        dsc.add(fl.label + ": " + txt.trim());
+                        return "(" + String.join(" AND ", parts) + ")";
+                    });
+                    comp = pr;
+                    break;
+                }
+                default: {
+                    final StyledField a = new StyledField("").withPlaceholder("Từ ngày", null);
+                    final StyledField b = new StyledField("").withPlaceholder("Đến ngày", null);
+                    JPanel pr = new JPanel(new GridLayout(1, 2, 8, 0));
+                    pr.setOpaque(false);
+                    pr.add(a);
+                    pr.add(b);
+                    f.conds.add((par, dsc) -> {
+                        LocalDate lo = parseDay(a.getText(), fl.label), hi = parseDay(b.getText(), fl.label);
+                        if (lo == null && hi == null) return null;
+                        if (lo != null && hi != null && hi.isBefore(lo))
+                            throw new IllegalArgumentException(fl.label + ": ngày \"Đến\" đang trước ngày \"Từ\".");
+                        List<String> parts = new ArrayList<>();
+                        String txt = "";
+                        if (lo != null) { par.add(Timestamp.valueOf(lo.atStartOfDay())); parts.add(fl.expr + " >= ?"); txt += "từ " + lo.format(D_FMT) + " "; }
+                        if (hi != null) { par.add(Timestamp.valueOf(hi.plusDays(1).atStartOfDay())); parts.add(fl.expr + " < ?"); txt += "đến " + hi.format(D_FMT); }
+                        dsc.add(fl.label + ": " + txt.trim());
+                        return "(" + String.join(" AND ", parts) + ")";
+                    });
+                    comp = pr;
+                }
+            }
+            addCell(f.panel, c, col, row, shown, comp);
+            if (++col == 2) { col = 0; row++; }
+        }
+        if (col == 1) row++;
+
+        if (d.sums.length > 0) {
+            JCheckBox chk = new JCheckBox("Thêm dòng TỔNG CỘNG ở cuối bảng", true);
+            chk.setOpaque(false);
+            chk.setFont(font(Font.PLAIN, 13));
+            chk.setForeground(INK);
+            chk.setFocusPainted(false);
+            f.total = chk;
+            c.gridx = 0;
+            c.gridy = row * 2;
+            c.gridwidth = 2;
+            c.insets = new Insets(0, 0, 8, 0);
+            f.panel.add(chk, c);
+        }
+        return f;
+    }
+
+    private static String exportKey(String pageKey) {
+        switch (pageKey) {
+            case "HocSinh": return "hocsinh";
+            case "Lop": return "lop";
+            case "KhoaHoc": return "khoahoc";
+            case "Lich": return "lich";
+            case "Luong": return "phieuluong";
+            default: return "hoadon";
+        }
+    }
+
+    private static String fmtTime(LocalDateTime t) {
+        return t.toLocalTime().equals(java.time.LocalTime.MIDNIGHT) ? t.format(D_FMT) : t.format(DT_FMT);
+    }
+
+    /** Đổi giá trị trong CSDL sang giá trị ghi vào Excel (số -> số, ngày -> chữ dd/MM/yyyy) */
+    private static Object xcell(Object v) {
+        if (v == null) return "";
+        if (v instanceof Timestamp) return fmtTime(((Timestamp) v).toLocalDateTime());
+        if (v instanceof LocalDateTime) return fmtTime((LocalDateTime) v);
+        if (v instanceof java.sql.Date) return ((java.sql.Date) v).toLocalDate().format(D_FMT);
+        if (v instanceof LocalDate) return ((LocalDate) v).format(D_FMT);
+        if (v instanceof Number) return Long.valueOf(((Number) v).longValue());
+        return v.toString();
+    }
+
+    /** Hộp thoại chọn dữ liệu / sắp xếp / bộ lọc rồi xuất Excel */
+    private void exportCenter(String preselect) {
+        if (!valid) { toast("Bạn không có quyền xuất dữ liệu.", T_ERR); return; }
+        List<DS> list = new ArrayList<>();
+        for (DS d : exportSpecs()) if (!d.sensitive || canPayroll()) list.add(d);
+        String[] names = new String[list.size()];
+        int start = 0;
+        for (int i = 0; i < names.length; i++) {
+            names[i] = list.get(i).title;
+            if (list.get(i).key.equals(preselect)) start = i;
+        }
+        RoundCombo cbData = new RoundCombo(names);
+        CardLayout cl = new CardLayout();
+        ScrollPanel cards = new ScrollPanel(cl);
+        List<FormUi> forms = new ArrayList<>();
+        for (int i = 0; i < list.size(); i++) {
+            FormUi fu = buildForm(list.get(i));
+            forms.add(fu);
+            cards.add(fu.panel, String.valueOf(i));
+        }
+        cbData.addActionListener(e -> cl.show(cards, String.valueOf(cbData.getSelectedIndex())));
+        cbData.setSelectedIndex(start);
+        cl.show(cards, String.valueOf(start));
+
+        JScrollPane sp = new JScrollPane(cards);
+        slim(sp);
+        sp.setOpaque(false);
+        sp.getViewport().setOpaque(false);
+        sp.setPreferredSize(new Dimension(700, 430));
+        JPanel body = new JPanel(new BorderLayout(0, 6));
+        body.setOpaque(false);
+        body.add(vform(new String[]{"Bạn muốn xuất dữ liệu gì?"}, new JComponent[]{cbData}), BorderLayout.NORTH);
+        body.add(sp, BorderLayout.CENTER);
+
+        final ExportJob[] box = new ExportJob[1];
+        boolean ok = dialog("Xuất dữ liệu ra Excel", "Chọn dữ liệu, cách sắp xếp và các điều kiện lọc",
+                body, "Chọn nơi lưu", GREEN, () -> {
+                    DS ds = list.get(cbData.getSelectedIndex());
+                    FormUi fu = forms.get(cbData.getSelectedIndex());
+                    List<Object> params = new ArrayList<>();
+                    List<String> desc = new ArrayList<>(), where = new ArrayList<>();
+                    try {
+                        for (Cond cd : fu.conds) {
+                            String s = cd.build(params, desc);
+                            if (s != null) where.add(s);
+                        }
+                    } catch (IllegalArgumentException ex) {
+                        return ex.getMessage();
+                    }
+                    int limit = 0;
+                    if (!fu.top.getText().trim().isEmpty()) {
+                        String digits = fu.top.getText().replaceAll("[^0-9]", "");
+                        if (digits.isEmpty()) return "Top N phải là một số nguyên dương.";
+                        try { limit = Integer.parseInt(digits); }
+                        catch (NumberFormatException ex) { return "Top N quá lớn."; }
+                        if (limit < 1 || limit > 100000) return "Top N phải từ 1 đến 100.000.";
+                    }
+                    int si = fu.sort.getSelectedIndex();
+                    String sql = "SELECT * FROM (" + ds.sql + ") t"
+                            + (where.isEmpty() ? "" : " WHERE " + String.join(" AND ", where))
+                            + " ORDER BY " + ds.sortSql[si]
+                            + (limit > 0 ? " LIMIT " + limit : "");
+                    box[0] = new ExportJob(ds, sql, params.toArray(), desc, ds.sortNames[si], limit,
+                            fu.total != null && fu.total.isSelected());
+                    return null;
+                }, true);
+        if (!ok || box[0] == null) return;
+        runExport(box[0]);
+    }
+
+    private void runExport(ExportJob j) {
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new File(j.ds.file + "_"
+                + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmm")) + ".xlsx"));
+        if (fc.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        File chosen = fc.getSelectedFile();
+        if (!chosen.getName().toLowerCase().endsWith(".xlsx"))
+            chosen = new File(chosen.getParentFile(), chosen.getName() + ".xlsx");
+        final File out = chosen;
+        if (out.exists() && JOptionPane.showConfirmDialog(this, "File đã tồn tại. Ghi đè?", "Xác nhận",
+                JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        toast("Đang xuất dữ liệu...", T_INFO);
+
+        Callable<String> job = () -> {
+            List<Object[]> rows = Db.query(j.sql, rs -> {
+                int n = rs.getMetaData().getColumnCount();
+                Object[] o = new Object[n];
+                for (int i = 0; i < n; i++) o[i] = xcell(rs.getObject(i + 1));
+                return o;
+            }, j.params);
+            if (rows.isEmpty()) return null;
+
+            Xlsx x = new Xlsx();
+            Xlsx.Sheet s = x.sheet(j.ds.title);
+            s.row(true, j.ds.title.toUpperCase(new Locale("vi")));
+            s.row(false, "Xuất lúc: " + LocalDateTime.now().format(DT_FMT) + "  •  Người xuất: " + hoTen + " (" + maNhanVien + ")");
+            s.row(false, "Sắp xếp: " + j.sortName);
+            s.row(false, "Bộ lọc: " + (j.desc.isEmpty() ? "Không lọc (lấy tất cả)" : String.join("; ", j.desc))
+                    + (j.top > 0 ? "  •  Giới hạn: " + j.top + " dòng đầu" : ""));
+            s.row(false, "Số dòng: " + rows.size());
+            s.row(false);
+            s.row(true, (Object[]) j.ds.heads);
+            for (Object[] r : rows) s.row(false, r);
+            if (j.total && j.ds.sums.length > 0) {
+                Object[] t = new Object[j.ds.heads.length];
+                t[0] = "TỔNG CỘNG";
+                for (int c : j.ds.sums) {
+                    long sum = 0;
+                    for (Object[] r : rows) if (r[c] instanceof Long) sum += (Long) r[c];
+                    t[c] = sum;
+                }
+                s.row(true, t);
+            }
+            x.save(out);
+            return "Đã xuất " + rows.size() + " dòng: " + out.getName();
+        };
+        async(job, msg -> {
+            if (msg == null) toast("Không có dòng nào khớp bộ lọc, chưa tạo file.", T_WARN);
+            else toast(msg, T_OK);
+        });
+    }
+
 
     public static void main(String[] args) {
         System.setProperty("awt.useSystemAAFontSettings", "on");
