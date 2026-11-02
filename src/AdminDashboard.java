@@ -118,7 +118,7 @@ public class AdminDashboard extends JFrame {
         initWords();
  
         try {
-            conn = KetNoiSQL.ketNoi();
+            conn = DBConnection.getConnection();
  
             if (conn == null || conn.isClosed()) {
                 throw new SQLException("Không có kết nối MySQL.");
@@ -140,7 +140,7 @@ public class AdminDashboard extends JFrame {
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this,
                     "Không kết nối được MySQL!\n"
-                    + "Kiểm tra database btl và file KetNoiSQL.java.\n\n"
+                    + "Kiểm tra database btl và file DBConnection.java.\n\n"
                     + e.getMessage(),
                     "Lỗi kết nối", JOptionPane.ERROR_MESSAGE);
             dispose();
@@ -222,13 +222,18 @@ public class AdminDashboard extends JFrame {
         ((RoundButton) logout).setFixedHeight(36);
         logout.addActionListener(e -> {
             int answer = JOptionPane.showConfirmDialog(this,
-                    "Bạn có muốn thoát khỏi trang quản trị không?",
+                    "Bạn có muốn đăng xuất khỏi hệ thống không?",
                     "Xác nhận đăng xuất", JOptionPane.YES_NO_OPTION);
             if (answer == JOptionPane.YES_OPTION) {
                 try {
-                    if (conn != null) conn.close();
-                } catch (SQLException ignored) {
+                    if (conn != null && !conn.isClosed()) {
+                        conn.close();
+                    }
+                } catch (SQLException ex) {
+                    ex.printStackTrace();
                 }
+                LoginForm login = new LoginForm();
+                login.setVisible(true);
                 dispose();
             }
         });
@@ -864,7 +869,6 @@ public class AdminDashboard extends JFrame {
             JLabel l = (JLabel) super.getTableCellRendererComponent(tb, format(v), sel, false, r, c);
             l.setBorder(new EmptyBorder(0, 16, 0, 16));
             l.setHorizontalAlignment(v instanceof Number ? SwingConstants.RIGHT : SwingConstants.LEFT);
- 
             Object hv = tb.getClientProperty("hoverRow");
             boolean hover = hv instanceof Integer && ((Integer) hv) == r;
  
@@ -954,6 +958,50 @@ public class AdminDashboard extends JFrame {
  
     // ================= THÊM / SỬA / XÓA =================
     // Form nhập liệu: 2 cặp "nhãn - ô nhập" trên mỗi hàng
+
+   private boolean kiemTraSoDienThoai(List<JTextField> fields) {
+    // Chỉ kiểm tra bảng học sinh và giáo viên
+    if (!currentTable.equalsIgnoreCase("hoc_sinh")
+            && !currentTable.equalsIgnoreCase("giao_vien")) {
+        return true;
+    }
+
+    // Tìm cột số điện thoại
+    int viTriSDT = -1;
+
+    for (int i = 0; i < columns.size(); i++) {
+        String tenCot = columns.get(i).toLowerCase();
+
+        if (tenCot.equals("sdt")
+                || tenCot.contains("so_dien_thoai")
+                || tenCot.contains("sodienthoai")) {
+            viTriSDT = i;
+            break;
+        }
+    }
+
+    // Nếu bảng không có cột số điện thoại thì bỏ qua
+    if (viTriSDT == -1) {
+        return true;
+    }
+
+    String sdt = fields.get(viTriSDT).getText().trim();
+
+    if (!sdt.matches("0[0-9]{9}")) {
+        JOptionPane.showMessageDialog(
+                this,
+                "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0",
+                "Số điện thoại không hợp lệ",
+                JOptionPane.WARNING_MESSAGE
+        );
+
+        fields.get(viTriSDT).requestFocus();
+        return false;
+    }
+
+    return true;
+}
+
     private List<JTextField> createInputFields(Object[] oldValues, boolean lockKeys) {
         List<JTextField> fields = new ArrayList<JTextField>();
  
@@ -1072,7 +1120,15 @@ public class AdminDashboard extends JFrame {
         if (currentTable.isEmpty()) return;
  
         List<JTextField> fields = createInputFields(null, false);
-        if (showInputDialog("Thêm bản ghi") != JOptionPane.OK_OPTION) return;
+
+        if (showInputDialog("Thêm bản ghi") != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        // Kiểm tra số điện thoại trước khi lưu
+        if (!kiemTraSoDienThoai(fields)) {
+            return;
+        }
  
         try {
             StringBuilder sql = new StringBuilder("INSERT INTO `" + currentTable + "` (");
@@ -1120,7 +1176,15 @@ public class AdminDashboard extends JFrame {
         for (int i = 0; i < oldValues.length; i++) oldValues[i] = table.getValueAt(row, viewIndex(i));
  
         List<JTextField> fields = createInputFields(oldValues, true);
-        if (showInputDialog("Sửa bản ghi") != JOptionPane.OK_OPTION) return;
+
+        if (showInputDialog("Sửa bản ghi") != JOptionPane.OK_OPTION) {
+            return;
+        }
+
+        // Kiểm tra số điện thoại trước khi cập nhật
+        if (!kiemTraSoDienThoai(fields)) {
+            return;
+        }
  
         try {
             StringBuilder sql = new StringBuilder("UPDATE `" + currentTable + "` SET ");

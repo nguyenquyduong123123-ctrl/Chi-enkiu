@@ -7,7 +7,8 @@ khoan_thu int not null,
 
 ngay_lap timestamp not null,
 hinh_thuc varchar(20) not null,
-foreign key(ma_nhan_vien) references Nhan_vien(ma_nhan_vien)
+foreign key(ma_nhan_vien) referenclich_hoces Nhan_vien(ma_nhan_vien)
+
 );
 create table Nhan_vien(
 ma_nhan_vien varchar(50) not null primary key,
@@ -109,6 +110,7 @@ diem_doc_hieu int not null,
 diem_tu_vung int not null,
 diem_nghe int not null,
 tong_diem int not null,
+tinh_trang varchar(50) not null,
 foreign key (ma_sinh_vien) references Hoc_sinh(ma_sinh_vien),
 foreign key (ma_de_thi) references De_thi(ma_de_thi)
 );
